@@ -3,7 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -67,11 +67,14 @@ async def test_migration_preserves_other_integrations_and_other_rests(
 ):
     """Removing one Rest's old switch must not remove any unrelated entity."""
     config_entry.add_to_hass(hass)
+    # Disabled so domain setup does not load it; a loaded entry would
+    # correctly remove its own legacy switch and mask what this test checks.
     other_rest = MockConfigEntry(
         domain=DOMAIN,
         title="Other Rest",
         unique_id="AA:BB:CC:DD:EE:01",
         data={CONF_ADDRESS: "AA:BB:CC:DD:EE:01", CONF_NAME: "Other Rest"},
+        disabled_by=ConfigEntryDisabler.USER,
     )
     other_rest.add_to_hass(hass)
     other_integration = MockConfigEntry(domain="unrelated_integration")

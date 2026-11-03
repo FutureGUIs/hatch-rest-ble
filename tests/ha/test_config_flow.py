@@ -9,6 +9,7 @@ from homeassistant.data_entry_flow import FlowResultType, InvalidData
 
 from custom_components.hatch_rest_ble.config_flow import CONF_MANUAL_ADDRESS
 from custom_components.hatch_rest_ble.const import (
+    CONF_LINGER_SECONDS,
     CONF_POLL_INTERVAL,
     DOMAIN,
     MANUFACTURER_ID,
@@ -386,14 +387,17 @@ async def test_options_show_current_or_default_poll_interval(
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "polling"
     expected = saved_interval if saved_interval is not None else POLL_INTERVAL_SECONDS
-    assert result["data_schema"]({}) == {CONF_POLL_INTERVAL: expected}
+    assert result["data_schema"]({}) == {
+        CONF_POLL_INTERVAL: expected,
+        CONF_LINGER_SECONDS: 0,
+    }
     mock_client.async_update.assert_not_awaited()
     mock_client.async_control.assert_not_awaited()
     mock_client.async_close.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
-    "interval", [MIN_POLL_INTERVAL_SECONDS, 15.0, "10", MAX_POLL_INTERVAL_SECONDS]
+    "interval", [MIN_POLL_INTERVAL_SECONDS, 15.0, "20", MAX_POLL_INTERVAL_SECONDS]
 )
 async def test_options_store_interval_and_request_reload(
     hass, config_entry, mock_client, interval
@@ -418,7 +422,7 @@ async def test_options_store_interval_and_request_reload(
     mock_client.async_close.assert_not_awaited()
 
 
-@pytest.mark.parametrize("interval", [4, 301, True, "invalid", None])
+@pytest.mark.parametrize("interval", [14, 301, True, "invalid", None])
 async def test_options_schema_rejects_invalid_poll_interval(
     hass, config_entry, mock_client, interval
 ):
@@ -443,7 +447,7 @@ async def test_options_reject_fractional_poll_interval(hass, config_entry, mock_
     with patch.object(hass.config_entries, "async_schedule_reload") as reload_entry:
         result = await _open_polling(hass, config_entry.entry_id)
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_POLL_INTERVAL: 5.5}
+            result["flow_id"], {CONF_POLL_INTERVAL: 15.5}
         )
     assert result["type"] == FlowResultType.FORM
     assert result["step_id"] == "polling"
@@ -471,3 +475,46 @@ async def test_options_unchanged_do_not_request_reload(hass, config_entry, mock_
     reload_entry.assert_not_called()
     mock_client.async_update.assert_not_awaited()
     mock_client.async_close.assert_not_awaited()
+
+
+async def test_options_saved_poll_interval_below_new_minimum_is_clamped(
+    hass, config_entry, mock_client
+):
+    """Entries saved by 0.2.x at 5-14 seconds open with the 15-second minimum."""
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={CONF_POLL_INTERVAL: 5}
+    )
+    result = await _open_polling(hass, config_entry.entry_id)
+    assert result["data_schema"]({})[CONF_POLL_INTERVAL] == MIN_POLL_INTERVAL_SECONDS
+
+
+@pytest.mark.parametrize("linger", [0, 30, 120])
+async def test_options_store_linger(hass, config_entry, mock_client, linger):
+    """A chosen hold is stored with the interval; HA reloads to apply it."""
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(
+        config_entry, options={CONF_LINGER_SECONDS: 10}
+    )
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        result = await _open_polling(hass, config_entry.entry_id)
+        assert result["data_schema"]({})[CONF_LINGER_SECONDS] == 10
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {CONF_POLL_INTERVAL: 60, CONF_LINGER_SECONDS: linger}
+        )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert config_entry.options == {
+        CONF_POLL_INTERVAL: 60,
+        CONF_LINGER_SECONDS: linger,
+    }
+
+
+async def test_options_reject_fractional_linger(hass, config_entry, mock_client):
+    config_entry.add_to_hass(hass)
+    result = await _open_polling(hass, config_entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {CONF_POLL_INTERVAL: 60, CONF_LINGER_SECONDS: 2.5}
+    )
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {CONF_LINGER_SECONDS: "invalid_linger"}
+    assert config_entry.options == {}

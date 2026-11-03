@@ -12,7 +12,13 @@ from .const import DOMAIN
 from .coordinator import HatchRestCoordinator
 from .program_coordinator import HatchRestProgramCoordinator
 
-PLATFORMS = [Platform.LIGHT, Platform.MEDIA_PLAYER, Platform.SWITCH, Platform.BUTTON]
+PLATFORMS = [
+    Platform.LIGHT,
+    Platform.MEDIA_PLAYER,
+    Platform.SWITCH,
+    Platform.BUTTON,
+    Platform.SENSOR,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -45,6 +51,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop)
     )
+    for unsubscribe in coordinator.async_start_bluetooth_tracking():
+        entry.async_on_unload(unsubscribe)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_create_background_task(
         hass,

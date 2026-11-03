@@ -27,6 +27,7 @@ class RestState:
     raw_flags: int
     hardware_version: str | None = None
     volume_min: int = 0
+    firmware_version: str | None = None
 
 
 def parse_feedback(data: bytes | bytearray) -> RestState:

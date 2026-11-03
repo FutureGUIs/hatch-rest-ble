@@ -2,3 +2,13 @@
 pytest-homeassistant-custom-component==0.13.371
 voluptuous==0.16.0
 ruff==0.17.0
+# Requirements of the HA components this integration depends on
+# (bluetooth -> usb). pytest-homeassistant-custom-component does not install
+# component requirements, so the HA suite cannot import without them.
+aiousbwatcher==1.1.2
+bluetooth-adapters==2.4.0
+bluetooth-auto-recovery==1.6.4
+bluetooth-data-tools==1.29.24
+dbus-fast==5.0.22
+habluetooth==7.1.2
+serialx==1.11.0

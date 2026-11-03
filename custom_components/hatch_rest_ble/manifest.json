@@ -31,6 +31,11 @@
       "connectable": true
     }
   ],
+  "categories": [
+    "lighting.bulbs_lamps",
+    "media_entertainment.speakers_audio",
+    "health_wellbeing"
+  ],
   "codeowners": [
     "@FutureGUIs"
   ],
@@ -41,7 +46,10 @@
   "documentation": "https://github.com/FutureGUIs/hatch-rest-ble",
   "integration_type": "device",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/FutureGUIs/hatch-rest-ble/issues",
+  "loggers": [
+    "bleak_retry_connector"
+  ],
   "requirements": [],
-  "version": "0.2.0",
-  "issue_tracker": "https://github.com/FutureGUIs/hatch-rest-ble/issues"
+  "version": "0.3.0"
 }

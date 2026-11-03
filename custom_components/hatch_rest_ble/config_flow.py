@@ -27,14 +27,17 @@ from homeassistant.util import dt as dt_util
 
 from .api import HatchRestClient, HatchRestError, UnsupportedDeviceError
 from .const import (
+    CONF_LINGER_SECONDS,
     CONF_POLL_INTERVAL,
     DOMAIN,
+    LINGER_SECONDS,
     MANUFACTURER_IDS,
+    MAX_LINGER_SECONDS,
     MAX_POLL_INTERVAL_SECONDS,
     MIN_POLL_INTERVAL_SECONDS,
-    POLL_INTERVAL_SECONDS,
     SOUNDS,
 )
+from .coordinator import linger_seconds, poll_interval_seconds
 from .program_coordinator import ProgramConflictError
 from .programs import (
     FLAG_ENABLED,
@@ -669,34 +672,32 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
     async def async_step_polling(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Validate polling bounds without opening a Bluetooth session."""
+        """Validate update settings without opening a Bluetooth session."""
         errors: dict[str, str] = {}
         if user_input is not None:
             interval = user_input.get(CONF_POLL_INTERVAL)
-            if (
-                isinstance(interval, (int, float))
-                and not isinstance(interval, bool)
-                and MIN_POLL_INTERVAL_SECONDS <= interval <= MAX_POLL_INTERVAL_SECONDS
-                and interval == int(interval)
+            linger = user_input.get(CONF_LINGER_SECONDS, LINGER_SECONDS)
+            if not _whole_number_between(
+                interval, MIN_POLL_INTERVAL_SECONDS, MAX_POLL_INTERVAL_SECONDS
             ):
-                return self.async_create_entry(
-                    title="",
-                    data={
-                        **self.config_entry.options,
-                        CONF_POLL_INTERVAL: int(interval),
-                    },
-                )
-            errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
+                errors[CONF_POLL_INTERVAL] = "invalid_poll_interval"
+            if not _whole_number_between(linger, 0, MAX_LINGER_SECONDS):
+                errors[CONF_LINGER_SECONDS] = "invalid_linger"
+            if not errors:
+                data = {**self.config_entry.options, CONF_POLL_INTERVAL: int(interval)}
+                # Store the hold only once it is used, so saving an unchanged
+                # interval leaves older entries identical and skips a reload.
+                if int(linger) != LINGER_SECONDS or CONF_LINGER_SECONDS in data:
+                    data[CONF_LINGER_SECONDS] = int(linger)
+                return self.async_create_entry(title="", data=data)
 
+        options = self.config_entry.options
         return self.async_show_form(
             step_id="polling",
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_POLL_INTERVAL,
-                        default=self.config_entry.options.get(
-                            CONF_POLL_INTERVAL, POLL_INTERVAL_SECONDS
-                        ),
+                        CONF_POLL_INTERVAL, default=poll_interval_seconds(options)
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
                             min=MIN_POLL_INTERVAL_SECONDS,
@@ -705,8 +706,28 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
                             mode=selector.NumberSelectorMode.BOX,
                             unit_of_measurement="s",
                         )
-                    )
+                    ),
+                    vol.Required(
+                        CONF_LINGER_SECONDS, default=linger_seconds(options)
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=MAX_LINGER_SECONDS,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                            unit_of_measurement="s",
+                        )
+                    ),
                 }
             ),
             errors=errors,
         )
+
+
+def _whole_number_between(value: Any, minimum: int, maximum: int) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and minimum <= value <= maximum
+        and value == int(value)
+    )
