@@ -564,18 +564,24 @@ async def test_cancelled_response_stops_notifications_and_unlocks(native):
     assert connect.await_count == 2
 
 
-async def test_program_read_serializes_with_ordinary_feedback_poll(native):
+async def test_poll_waits_for_slot_then_shares_program_connection(native):
+    """A poll never overlaps a slot request, but runs between slots on the
+    table read's connection instead of waiting for all ten slots."""
     rest, client, connect = native
     client.withhold.add(b"EGL01")
     programs = asyncio.create_task(rest.async_get_programs())
     await wait_for_command(client)
     poll = asyncio.create_task(rest.async_update())
     await asyncio.sleep(0)
+    assert not poll.done()
     connect.assert_awaited_once()
     client.reply(b"C4")
-    assert (await programs).get(1) == program()
     assert (await poll).sound == 3
-    assert connect.await_count == 2
+    assert not programs.done()
+    assert (await programs).get(1) == program()
+    connect.assert_awaited_once()
+    assert client.events[-2:] == ["stop", "disconnect"]
+    assert client.events.count("disconnect") == 1
 
 
 async def test_closed_client_rejects_program_work(native):
@@ -716,7 +722,7 @@ async def test_queued_program_timeout_does_not_cancel_current_poll(native, monke
     client.read_gatt_char.side_effect = read
     poll = asyncio.create_task(rest.async_update())
     await entered.wait()
-    monkeypatch.setattr(api, "OPERATION_TIMEOUT", 0.01)
+    monkeypatch.setattr(api, "PROGRAM_OPERATION_TIMEOUT", 0.01)
     with pytest.raises(HatchRestError):
         await rest.async_get_programs()
     assert not poll.done()
@@ -724,3 +730,31 @@ async def test_queued_program_timeout_does_not_cancel_current_poll(native, monke
     release.set()
     assert (await poll).sound == 3
     client.start_notify.assert_not_awaited()
+
+
+async def test_disconnect_fails_pending_request_without_waiting(native, monkeypatch):
+    rest, client, _ = native
+    monkeypatch.setattr(api, "GATT_TIMEOUT", 30)
+    client.withhold.add(b"EGL01")
+    task = asyncio.create_task(rest.async_get_programs())
+    await wait_for_command(client)
+    client.is_connected = False
+    rest._on_disconnected(client)
+    with pytest.raises(HatchRestError, match="disconnected"):
+        await asyncio.wait_for(task, 1)
+    assert not rest._lock.locked()
+
+
+async def test_table_read_reads_firmware_once_and_releases_at_end(native):
+    rest, client, connect = native
+    snapshot = await rest.async_get_programs()
+    assert snapshot.firmware_version == "1.0.4.31"
+    firmware_reads = [
+        call
+        for call in client.read_gatt_char.await_args_list
+        if call.args[0] is client.firmware_char
+    ]
+    assert len(firmware_reads) == 1
+    connect.assert_awaited_once()
+    assert client.events.count("disconnect") == 1
+    assert rest._client is None

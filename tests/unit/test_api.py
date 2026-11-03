@@ -586,3 +586,147 @@ async def test_cancelled_cleanup_does_not_replay_or_revoke_confirmed_feedback(se
     client.write_gatt_char.assert_awaited_once()
     client.disconnect.assert_awaited_once()
     assert rest._client is None
+
+
+# --- Connection policy and held connections (0.3.0) ---------------------
+
+
+async def test_connect_policy_per_operation_kind(session):
+    rest, _, connect, _ = session
+    await rest.async_update()
+    assert connect.await_args.kwargs["max_attempts"] == api.POLL_CONNECT_ATTEMPTS
+    assert connect.await_args.kwargs["disconnected_callback"] == rest._on_disconnected
+    await rest.async_control(lambda state: [b"SV10"])
+    assert connect.await_args.kwargs["max_attempts"] == api.COMMAND_CONNECT_ATTEMPTS
+
+
+async def test_default_releases_after_every_command(session):
+    rest, client, connect, _ = session
+    await rest.async_control(lambda state: [b"SV10"])
+    await rest.async_control(lambda state: [b"SV20"])
+    assert connect.await_count == 2
+    assert client.disconnect.await_count == 2
+
+
+async def test_linger_reuses_connection_for_follow_up_commands(session):
+    rest, client, connect, _ = session
+    rest.set_linger(30)
+    await rest.async_control(lambda state: [b"SV10"])
+    client.disconnect.assert_not_awaited()
+    assert not rest._lock.locked()
+    await rest.async_control(lambda state: [b"SV20"])
+    await rest.async_update()
+    connect.assert_awaited_once()
+    client.disconnect.assert_not_awaited()
+    await rest.async_close()
+    client.disconnect.assert_awaited_once()
+
+
+async def test_linger_expires_and_releases_idle_connection(session):
+    rest, client, connect, _ = session
+    rest.set_linger(0.02)
+    await rest.async_control(lambda state: [b"SV10"])
+    client.disconnect.assert_not_awaited()
+    for _ in range(50):
+        if client.disconnect.await_count:
+            break
+        await asyncio.sleep(0.01)
+    client.disconnect.assert_awaited_once()
+    assert rest._client is None
+    await rest.async_update()
+    assert connect.await_count == 2
+
+
+async def test_poll_does_not_start_or_extend_a_hold(session):
+    rest, client, connect, _ = session
+    rest.set_linger(30)
+    await rest.async_update()
+    client.disconnect.assert_awaited_once()
+    assert rest._client is None
+
+
+async def test_held_connection_pushes_feedback_notifications(session):
+    rest, client, _, _ = session
+    client.feedback.properties = ["read", "notify"]
+    callbacks = []
+
+    async def start_notify(characteristic, callback):
+        assert characteristic is client.feedback
+        callbacks.append(callback)
+
+    client.start_notify = AsyncMock(side_effect=start_notify)
+    received = Mock()
+    rest.set_state_listener(received)
+    rest.set_linger(30)
+    await rest.async_control(lambda state: [b"SN07"])
+    callbacks[0](client.feedback, bytearray(NEW_PACKET))
+    assert received.call_args.args[0].sound == 7
+    callbacks[0](client.feedback, bytearray(b"C\x01"))  # truncated
+    received.assert_called_once()
+    await rest.async_control(lambda state: [b"SN03"])
+    client.start_notify.assert_awaited_once()
+    await rest.async_close()
+
+
+async def test_stale_held_connection_reconnects_without_clearing_cache(session):
+    rest, stale, connect, _ = session
+    rest.set_linger(30)
+    await rest.async_control(lambda state: [b"SV10"])
+    stale.read_gatt_char.side_effect = BleakError("Not connected")
+    fresh = FakeClient()
+    connect.return_value = fresh
+    state = await rest.async_update()
+    assert state.color == (255, 32, 64)
+    assert connect.await_count == 2
+    stale.clear_cache.assert_not_awaited()
+    stale.disconnect.assert_awaited_once()
+    assert connect.await_args.kwargs["use_services_cache"] is True
+    await rest.async_close()
+
+
+async def test_write_failure_on_held_connection_is_not_replayed(session):
+    rest, client, connect, _ = session
+    rest.set_linger(30)
+    await rest.async_control(lambda state: [b"SV10"])
+    client.write_gatt_char.side_effect = BleakError("Not connected")
+    with pytest.raises(HatchRestError):
+        await rest.async_control(lambda state: [b"SV20"])
+    connect.assert_awaited_once()
+    assert client.write_gatt_char.await_count == 2
+
+
+async def test_dropped_held_connection_is_replaced(session):
+    rest, client, connect, _ = session
+    rest.set_linger(30)
+    await rest.async_control(lambda state: [b"SV10"])
+    client.is_connected = False
+    rest._on_disconnected(client)
+    fresh = FakeClient()
+    connect.return_value = fresh
+    await rest.async_update()
+    assert connect.await_count == 2
+    client.disconnect.assert_awaited_once()
+    await rest.async_close()
+
+
+async def test_firmware_revision_is_cached_and_attached(session):
+    rest, client, _, _ = session
+    client.characteristics[api.CHAR_FIRMWARE_REVISION] = SimpleNamespace(
+        properties=["read"]
+    )
+    client.read_gatt_char.side_effect = [b"1.0.4.31\0", PACKET, PACKET]
+    first = await rest.async_update()
+    second = await rest.async_update()
+    assert first.firmware_version == second.firmware_version == "1.0.4.31"
+    assert rest.firmware_version == "1.0.4.31"
+    assert client.read_gatt_char.await_count == 3
+
+
+async def test_firmware_failure_is_optional_and_retried(session):
+    rest, client, _, _ = session
+    client.characteristics[api.CHAR_FIRMWARE_REVISION] = SimpleNamespace(
+        properties=["read"]
+    )
+    client.read_gatt_char.side_effect = [BleakError("busy"), PACKET, b"1.1", PACKET]
+    assert (await rest.async_update()).firmware_version is None
+    assert (await rest.async_update()).firmware_version == "1.1"
