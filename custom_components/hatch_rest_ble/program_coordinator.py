@@ -23,7 +23,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 _Result = TypeVar("_Result")
-PROGRAM_REFRESH_INTERVAL = timedelta(minutes=15)
+# Programs change rarely and a refresh is ~100 acknowledged round trips; edits
+# in HA refresh immediately and the Refresh button covers app-side edits.
+PROGRAM_REFRESH_INTERVAL = timedelta(hours=1)
 
 
 class HatchRestProgramCoordinator(DataUpdateCoordinator[ProgramSnapshot]):

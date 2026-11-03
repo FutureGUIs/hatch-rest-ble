@@ -24,18 +24,26 @@ async def test_setup_and_unload(hass, config_entry, mock_client, rest_state):
     entities = er.async_entries_for_config_entry(
         er.async_get(hass), config_entry.entry_id
     )
-    assert len(entities) == 3
+    assert len(entities) == 4
     assert {entity.entity_id.split(".", 1)[0] for entity in entities} == {
         "light",
         "media_player",
         "button",
+        "sensor",
     }
     assert {entity.unique_id for entity in entities} == {
         f"{ADDRESS}:light",
         f"{ADDRESS}:sound",
         f"{ADDRESS}:refresh_programs",
+        f"{ADDRESS}:rssi",
     }
-    assert all(hass.states.get(entity.entity_id) is not None for entity in entities)
+    enabled = [entity for entity in entities if entity.disabled_by is None]
+    assert {entity.unique_id for entity in enabled} == {
+        f"{ADDRESS}:light",
+        f"{ADDRESS}:sound",
+        f"{ADDRESS}:refresh_programs",
+    }
+    assert all(hass.states.get(entity.entity_id) is not None for entity in enabled)
     mock_client.async_update.assert_awaited_once()
     mock_client.async_control.assert_not_awaited()
     assert await hass.config_entries.async_unload(config_entry.entry_id)

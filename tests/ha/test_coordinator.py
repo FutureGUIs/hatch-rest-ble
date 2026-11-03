@@ -171,9 +171,14 @@ async def test_confirmed_command_state_publishes_before_cleanup_completes(
         await coordinator.async_shutdown()
 
 
-@pytest.mark.parametrize("interval", [None, 5, 15, 300])
-async def test_configured_poll_interval(hass, config_entry, mock_client, interval):
-    """Entry options determine the timer without changing the control path."""
+@pytest.mark.parametrize(
+    ("interval", "expected"),
+    [(None, POLL_INTERVAL_SECONDS), (5, 15), (15, 15), (300, 300), (900, 300)],
+)
+async def test_configured_poll_interval(
+    hass, config_entry, mock_client, interval, expected
+):
+    """Entry options set the timer; older out-of-range values are clamped."""
     if interval is not None:
         config_entry.add_to_hass(hass)
         hass.config_entries.async_update_entry(
@@ -181,8 +186,6 @@ async def test_configured_poll_interval(hass, config_entry, mock_client, interva
         )
     coordinator = HatchRestCoordinator(hass, config_entry)
     try:
-        assert coordinator.update_interval == timedelta(
-            seconds=interval if interval is not None else POLL_INTERVAL_SECONDS
-        )
+        assert coordinator.update_interval == timedelta(seconds=expected)
     finally:
         await coordinator.async_shutdown()

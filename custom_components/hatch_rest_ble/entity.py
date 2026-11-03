@@ -25,4 +25,5 @@ class HatchRestEntity(CoordinatorEntity[HatchRestCoordinator]):
             model="Rest (1st generation)",
             name=coordinator.device_name,
             hw_version=coordinator.data.hardware_version,
+            sw_version=coordinator.data.firmware_version,
         )

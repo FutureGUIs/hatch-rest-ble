@@ -250,6 +250,12 @@ class HatchRestClient:
         self._state_listener = listener
 
     @property
+    def connected(self) -> bool:
+        """Whether a Bluetooth connection to the Rest is currently open."""
+        client = self._client
+        return client is not None and getattr(client, "is_connected", False) is True
+
+    @property
     def firmware_version(self) -> str | None:
         """Firmware revision read from the device, when it was available."""
         return self._firmware_version

@@ -46,9 +46,12 @@ def make_service_info(
     manufacturer_data: dict[int, bytes] | None = None,
     connectable: bool = True,
     name: str = NAME,
+    address: str | None = None,
+    rssi: int = -60,
+    source: str = "local",
 ) -> BluetoothServiceInfoBleak:
     """Build a real service-info object, including actual Bleak wrappers."""
-    address = ADDRESS.lower()
+    address = address or ADDRESS.lower()
     if manufacturer_data is None:
         manufacturer_data = {MANUFACTURER_ID: b"R"}
     advertisement = AdvertisementData(
@@ -57,17 +60,17 @@ def make_service_info(
         service_data={},
         service_uuids=[],
         tx_power=None,
-        rssi=-60,
+        rssi=rssi,
         platform_data=(),
     )
     return BluetoothServiceInfoBleak(
         name=name,
         address=address,
-        rssi=-60,
+        rssi=rssi,
         manufacturer_data=manufacturer_data,
         service_data={},
         service_uuids=[],
-        source="local",
+        source=source,
         device=BLEDevice(address, name, {}),
         advertisement=advertisement,
         connectable=connectable,

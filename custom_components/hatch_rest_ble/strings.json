@@ -34,14 +34,15 @@
         "title": "Configure Hatch Rest",
         "menu_options": {
           "programs": "Manage programs",
-          "polling": "Polling interval"
+          "polling": "Updates and connection"
         }
       },
       "polling": {
         "title": "Hatch Rest updates",
-        "description": "Choose how often to check for changes made with the Hatch app or Rest buttons. A shorter interval updates Home Assistant faster and uses more Bluetooth traffic.",
+        "description": "Choose how often to check for changes made with the Hatch app or Rest buttons. Each check briefly connects to the Rest, so shorter intervals use more Bluetooth capacity, especially with several devices on one proxy. When the Rest comes back into range after being unreachable, it is checked right away.\n\nAfter a command, the connection can stay open briefly so follow-up commands are faster and button presses on the Rest appear immediately. While it is open, the Hatch app cannot connect. Use 0 to disconnect right after each command.",
         "data": {
-          "poll_interval": "Polling interval"
+          "poll_interval": "Polling interval",
+          "linger_seconds": "Keep connected after a command"
         }
       },
       "programs": {
@@ -97,7 +98,7 @@
       }
     },
     "error": {
-      "invalid_poll_interval": "Enter a whole number of seconds from 5 to 300.",
+      "invalid_poll_interval": "Enter a whole number of seconds from 15 to 300.",
       "invalid_program_name": "Use 1 to 16 printable ASCII characters. The name cannot be blank or one of OK, E01 through E06, or Unknown.",
       "invalid_program_time": "Enter a local time as HH:MM or HH:MM:SS.",
       "invalid_program_duration": "Choose a duration from 1 minute to 17 hours 59 minutes.",
@@ -107,7 +108,8 @@
       "program_conflict": "The program or slot changed on the Rest. Choose Reload, review the latest settings, and try again.",
       "program_missing": "This program is no longer on the Rest. Refresh the program list.",
       "programs_full": "All 10 program slots are in use. Delete an existing program before adding another.",
-      "confirmation_required": "Select the confirmation checkbox to apply this change."
+      "confirmation_required": "Select the confirmation checkbox to apply this change.",
+      "invalid_linger": "Enter a whole number of seconds from 0 to 120."
     },
     "abort": {
       "device_not_loaded": "This Rest is not loaded. Enable or reload its integration entry, then open Manage programs again."
