@@ -1,0 +1,4 @@
+-r requirements-unit.txt
+pytest-homeassistant-custom-component==0.13.371
+voluptuous==0.16.0
+ruff==0.17.0

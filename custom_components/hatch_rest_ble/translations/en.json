@@ -1,0 +1,116 @@
+{
+  "title": "Hatch Rest BLE (1st Gen)",
+  "config": {
+    "flow_title": "{name} ({address})",
+    "step": {
+      "user": {
+        "title": "Select your Hatch Rest",
+        "description": "Select a discovered Rest, or enter its Bluetooth MAC address if it is missing from the list. Fill in only one field. Home Assistant must have seen the device through a connectable Bluetooth adapter or proxy. The Rest can have its light and sound off, but it must be plugged in. Only the original, first-generation Hatch Rest is supported.",
+        "data": {
+          "address": "Discovered device",
+          "manual_address": "Bluetooth MAC address (manual)"
+        }
+      },
+      "confirm": {
+        "title": "Connect Hatch Rest",
+        "description": "Connect {name} ({address}). Close the Hatch Sleep app before continuing. Only the original, first-generation Hatch Rest is supported."
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect. Close the Hatch Sleep app and make sure a connectable Home Assistant Bluetooth adapter or proxy is in range.",
+      "invalid_address": "Enter a complete Bluetooth MAC address, such as AA:BB:CC:DD:EE:FF.",
+      "select_one_device": "Select a discovered device or enter a Bluetooth MAC address. Fill in only one field.",
+      "unknown": "An unexpected error occurred. Check the Home Assistant logs for details."
+    },
+    "abort": {
+      "already_configured": "This Hatch Rest is already configured.",
+      "already_in_progress": "A configuration flow for this Hatch Rest is already in progress.",
+      "unsupported_device": "This device does not use the supported first-generation Hatch Rest Bluetooth protocol. Rest+, Rest Mini, Restore, and second-generation devices are not supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Hatch Rest",
+        "menu_options": {
+          "programs": "Manage programs",
+          "polling": "Polling interval"
+        }
+      },
+      "polling": {
+        "title": "Hatch Rest updates",
+        "description": "Choose how often to check for changes made with the Hatch app or Rest buttons. A shorter interval updates Home Assistant faster and uses more Bluetooth traffic.",
+        "data": {
+          "poll_interval": "Polling interval"
+        }
+      },
+      "programs": {
+        "title": "Manage Rest programs",
+        "description": "{notice}\n\nLast read device clock: {device_clock}\n\n{programs}\n\nThese programs are stored and run on the Rest. Choose Refresh to read changes made in the Hatch app.",
+        "data": {
+          "choice": "Program or action"
+        }
+      },
+      "program_actions": {
+        "title": "Program actions",
+        "description": "{program}",
+        "menu_options": {
+          "edit_program": "Edit program",
+          "toggle_program": "Enable or disable program",
+          "delete_program": "Delete program",
+          "programs": "Back to programs"
+        }
+      },
+      "edit_program": {
+        "title": "Edit Rest program",
+        "description": "{program}\n\nLast read device clock: {device_clock}\n\nTimes use the Rest's local wall clock. An end marked +1 day is on the following day. {lock_support} Reload reads the latest program and discards unsaved edits.",
+        "data": {
+          "name": "Name (up to 16 ASCII characters)",
+          "enabled": "Enabled",
+          "weekdays": "Repeat days (none means Never)",
+          "start_time": "Start time on the Rest",
+          "duration_hours": "Duration hours",
+          "duration_minutes": "Duration minutes",
+          "color": "Light color",
+          "brightness": "Brightness (%)",
+          "sound": "Sound",
+          "volume": "Volume (%)",
+          "toddler_lock": "Toddler lock",
+          "refresh": "Reload this program from the Rest"
+        }
+      },
+      "delete_program": {
+        "title": "Delete Rest program",
+        "description": "Delete this program from the Rest?\n\n{program}\n\nReload updates this summary before you confirm and does not delete anything.",
+        "data": {
+          "confirm": "Confirm deletion",
+          "refresh": "Reload this program before confirming"
+        }
+      },
+      "toggle_program": {
+        "title": "Enable or disable Rest program",
+        "description": "{action} this program on the Rest?\n\n{program}\n\nReload updates this summary without changing the program.",
+        "data": {
+          "confirm": "Apply this change",
+          "refresh": "Reload this program before confirming"
+        }
+      }
+    },
+    "error": {
+      "invalid_poll_interval": "Enter a whole number of seconds from 5 to 300.",
+      "invalid_program_name": "Use 1 to 16 printable ASCII characters. The name cannot be blank or one of OK, E01 through E06, or Unknown.",
+      "invalid_program_time": "Enter a local time as HH:MM or HH:MM:SS.",
+      "invalid_program_duration": "Choose a duration from 1 minute to 17 hours 59 minutes.",
+      "whole_number_required": "Enter a whole number.",
+      "program_read_failed": "Unable to read programs. Close the Hatch app, check Bluetooth range, and choose Refresh or Reload to retry.",
+      "program_write_failed": "The Rest did not confirm the change. Reload its latest settings before trying again.",
+      "program_conflict": "The program or slot changed on the Rest. Choose Reload, review the latest settings, and try again.",
+      "program_missing": "This program is no longer on the Rest. Refresh the program list.",
+      "programs_full": "All 10 program slots are in use. Delete an existing program before adding another.",
+      "confirmation_required": "Select the confirmation checkbox to apply this change."
+    },
+    "abort": {
+      "device_not_loaded": "This Rest is not loaded. Enable or reload its integration entry, then open Manage programs again."
+    }
+  }
+}
