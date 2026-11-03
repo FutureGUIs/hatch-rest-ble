@@ -1,0 +1,6 @@
+Hatch Rest BLE builds on protocol knowledge from:
+
+- jcgoette/hatch_rest_homeassistant (MIT), Copyright (c) 2021 Justin Goette
+- kjoconnor/pyhatchbabyrest (MIT), Copyright (c) 2019 Kevin O'Connor
+
+Their copyright notices are retained in LICENSE.
