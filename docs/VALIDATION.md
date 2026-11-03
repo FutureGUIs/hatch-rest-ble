@@ -1,5 +1,19 @@
 # Validation status and device test plan
 
+## Version 0.3.0 status
+
+**415 tests passed** on 2026-11-03 with Python 3.14, Home Assistant 2026.10.0, Bleak 3.0.2, and bleak-retry-connector 4.7.1: 240 unit tests for protocol, transport, and program transactions, and 175 Home Assistant tests. This is the first release where the HA suite actually ran: before 0.3.0 it could not import HA's Bluetooth component because its requirements were not installed, so CI had been failing at that step. One HA test was also corrected; it set up a second Rest that legitimately removed its own legacy switch.
+
+New coverage: per-operation connect attempts, the disconnect callback, hold reuse and expiry, polls not extending a hold, feedback notifications while held, stale-hold reconnection without cache clearing, no write replay on a held connection, firmware caching, polls interleaving with program-table slots on one connection, advertisement-triggered refresh and unavailability, the hold option, clamping of old poll intervals, firmware in the device registry, and the signal-strength sensor.
+
+Physical checks added for 0.3.0:
+
+1. Default 60-second polling: confirm app and button changes appear within one interval, and that an unplugged Rest becomes unavailable and recovers promptly after being plugged back in.
+2. With **Keep connected after a command** at 30 seconds, issue several commands in a row and compare their latency with the default. Press the Rest's buttons during the hold and confirm the change reaches HA without waiting for a poll. Confirm the Hatch app can connect once the hold has expired.
+3. Capture debug logs of advertisement data with the Rest off, light only, sound only, and both on. If the manufacturer data changes with state, advertisements could replace most polling.
+4. Run a full program refresh and issue light commands while it runs; confirm they apply within a few seconds rather than after the whole table.
+5. Enable the Signal strength sensor and confirm its value and `source` match what HA's Bluetooth integration reports for the Rest.
+
 ## Version 0.2.0 status
 
 **227 unit tests passed** on 2026-10-15 for 0.2.0, covering the protocol, transport, output controls, and native program parsing and transactions. This combined result includes the 71 new program codec cases for classic fields, encodings, validation bounds, native flag changes, deletion, local clock values, and firmware-gated lock commands, plus six enable-baseline cases added in the final revision. The final Ruff lint and formatting rerun passed for all **35 Python files**, including HA tests; linting those tests does not execute them. Historical results below describe earlier releases.

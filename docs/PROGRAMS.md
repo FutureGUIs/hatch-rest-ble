@@ -11,7 +11,7 @@ Native program execution is strongly indicated by the app's BLE protocol. Operat
 3. Select an existing program, then choose **Edit program**, **Enable or disable program**, or **Delete program**. **Add a new program** uses an available slot; there are ten slots in total.
 4. Edit the fields in one HA form and submit it. Saving requires a BLE connection, application acknowledgements, and a readback of the saved slot.
 
-This is a standard HA options flow, using menus and forms. It does not add the custom cards shown in the design preview. **Configure → Polling interval** retains the separate live polling setting. HA documents this UI mechanism in its [options flow guidance](https://developers.home-assistant.io/docs/core/integration/options_flow/).
+This is a standard HA options flow, using menus and forms. It does not add the custom cards shown in the design preview. **Configure → Updates and connection** holds the separate live polling and connection settings. HA documents this UI mechanism in its [options flow guidance](https://developers.home-assistant.io/docs/core/integration/options_flow/).
 
 Before the first write, record the existing program settings in the Hatch app and test an unused slot. Close the app to release its BLE connection while HA connects. Reopen it after HA has disconnected to compare the saved result.
 
@@ -36,7 +36,7 @@ Each occupied slot gets a **Configuration** switch named for its program. On mea
 
 The switch unique ID is based on `<MAC>:program:<slot>`, so renaming a program keeps its identity. Empty slots do not create switches. Deleting a program removes that slot's switch; Light/Sound and other slots remain. A new program in a reused slot uses the slot's identity.
 
-The device's **Refresh programs** button reads all slots from the Rest; **Refresh programs from the Rest** in the editor does the same. The program table also loads in the background after setup and refreshes every 15 minutes; entering or refreshing the editor obtains device data as well. Use explicit refresh to see a change made in the app immediately. Live light/sound polling remains independently configurable, with a 10-second default.
+The device's **Refresh programs** button reads all slots from the Rest; **Refresh programs from the Rest** in the editor does the same. The program table also loads in the background after setup and refreshes hourly; entering or refreshing the editor obtains device data as well. Use explicit refresh to see a change made in the app immediately. A table read takes one slot at a time on a shared connection, so live controls can run between slots. Live light/sound polling remains independently configurable, with a 60-second default.
 
 All sessions use the same per-device BLE lock. A program read or write can hold up another action while its transaction completes. Avoid repeated refreshes while troubleshooting command latency, and use debug timings to distinguish queued work from connection or read delays.
 

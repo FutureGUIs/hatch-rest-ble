@@ -1,23 +1,38 @@
 # Hatch Rest BLE — first generation
 
+![Hatch Rest BLE icon](custom_components/hatch_rest_ble/brand/icon.png)
+
 A local Home Assistant custom integration for the original Bluetooth-only Hatch Rest. It uses Home Assistant's shared Bluetooth stack, including connectable local adapters and active Bluetooth proxies. No Hatch account or cloud connection is needed.
 
-Development baseline: **Home Assistant 2026.10**. Version **0.2.0** adds management of the Rest's ten native program slots, including programs created in the Hatch app. Open **Configure → Manage programs** to create, edit, enable, disable, refresh, or delete a program. Light, Sound, native whole-device power, local Hatch branding, and the default 10-second live polling interval are retained.
+Development baseline: **Home Assistant 2026.10**. Version **0.3.0** reduces Bluetooth traffic: a 60-second default poll, immediate refresh when an unreachable Rest starts advertising again, an optional connection hold after commands, and program-table reads that no longer block live controls. Version 0.2.0 added management of the Rest's ten native program slots (**Configure → Manage programs**).
 
-**227 local unit tests passed**, with Ruff lint and formatting clean for all 35 Python files. The full Home Assistant suite and physical-device verification remain unrun. See [VALIDATION.md](docs/VALIDATION.md) for test scope and remaining checks. Earlier HA releases have not been tested.
+**415 tests pass** (240 transport/protocol unit tests and 175 Home Assistant tests against HA 2026.10's real config-entry, coordinator, entity, and Bluetooth classes), with Ruff lint and formatting clean. Physical-device verification remains pending. See [VALIDATION.md](docs/VALIDATION.md) for test scope and remaining checks. Earlier HA releases have not been tested.
 
 ## Install
 
-1. Copy `custom_components/hatch_rest_ble` into your Home Assistant configuration directory's `custom_components` folder.
-2. Restart Home Assistant. Its Bluetooth integration must be enabled, with an adapter or active proxy capable of making connections.
-3. Look for **Hatch Rest BLE (1st Gen)** under **Settings → Devices & services → Discovered**, or choose **Add integration → Hatch Rest BLE (1st Gen)**.
-4. Select and confirm the device. If it is missing from the list, enter its complete Bluetooth MAC address in the manual field; fill in only one field. HA must already have seen that address through a connectable adapter or active proxy. Close the Hatch app so it releases its BLE connection. Setup verifies the first-generation GATT characteristics and reads valid state before creating an entry.
+**Home Assistant Marketplace or HACS:** search for **Hatch Rest BLE (1st Gen)** and install it. Until the catalog listing is approved, add `https://github.com/FutureGUIs/hatch-rest-ble` as a custom repository of type *Integration* in HACS.
+
+**Manual:** copy `custom_components/hatch_rest_ble` into your Home Assistant configuration directory's `custom_components` folder and restart Home Assistant.
+
+Then:
+
+1. Make sure HA's Bluetooth integration is enabled, with an adapter or active proxy capable of making connections.
+2. Look for **Hatch Rest BLE (1st Gen)** under **Settings → Devices & services → Discovered**, or choose **Add integration → Hatch Rest BLE (1st Gen)**.
+3. Select and confirm the device. If it is missing from the list, enter its complete Bluetooth MAC address in the manual field; fill in only one field. HA must already have seen that address through a connectable adapter or active proxy. Close the Hatch app so it releases its BLE connection. Setup verifies the first-generation GATT characteristics and reads valid state before creating an entry.
 
 Each nearby Rest can be added separately, including a second Rest entered by address if it is missing from the chooser. The integration discovers the legacy `R`/`r` advertisements under manufacturer IDs 1076 and 14099 through HA. Bluetooth range includes the reach of active proxies. Rest+, Rest Mini, Restore, and the Wi-Fi second-generation Rest are excluded. A later hardware revision of the original BLE Rest remains supported, including its different volume scale.
 
 The Rest must be plugged in, but its light and sound can be off. Discovery, setup verification, and polling do not send power-on commands.
 
-The domain is `hatch_rest_ble`. If you use another integration for the same device, disable that device's old entry before testing to avoid competing BLE connections. Moving from a different integration does not migrate its entities or automations. Source repository: [FutureGUIs/hatch-rest-ble](https://github.com/FutureGUIs/hatch-rest-ble). Manual installation is supported; HACS metadata is included.
+The domain is `hatch_rest_ble`. If you use another integration for the same device, disable that device's old entry before testing to avoid competing BLE connections. Moving from a different integration does not migrate its entities or automations. Source repository: [FutureGUIs/hatch-rest-ble](https://github.com/FutureGUIs/hatch-rest-ble).
+
+## Upgrade from 0.2.x
+
+Install 0.3.0 through the Marketplace/HACS or replace the `custom_components/hatch_rest_ble` directory, then restart. Entries and entity IDs are retained. Behavior changes:
+
+- Entries without a saved polling interval now poll every **60 seconds** instead of 10. Saved intervals below the new 15-second minimum run at 15 seconds. App and button changes still appear on the next poll, or immediately while a connection is held (below).
+- The program table refreshes hourly instead of every 15 minutes. Edits made in HA, the **Refresh programs** button, and the editor's reload still read immediately.
+- A new, disabled-by-default **Signal strength** diagnostic sensor is added to each Rest.
 
 ## Upgrade from 0.1.x
 
@@ -33,6 +48,7 @@ The approved Hatch logo is bundled in `brand/icon.png` (256×256) and `brand/ico
 | Sound media player | On/Off controls whole-device power, including light and sound. Play resumes sound; Pause or source None silences sound while retaining the lamp. Select built-in sounds and set volume. |
 | Program switches | One Configuration switch per occupied program slot. On arms that program for its scheduled time; Off disables future scheduled starts. These switches do not indicate whether a program is currently running and do not replace whole-device power. |
 | Refresh programs button | Reads the Rest's program table again, including changes made in the Hatch app. |
+| Signal strength (diagnostic, disabled by default) | RSSI of the Rest's latest advertisement, with the receiving adapter or proxy in its `source` attribute. It keeps updating while polls fail, which helps diagnose range and proxy routing. |
 
 Media-player On/Off reads fresh state and sends only the ordinary `SI01` or `SI00` command when needed. The Rest's firmware handles its remembered settings. The integration does not capture a master settings snapshot or add color, sound, or volume writes to a power action.
 
@@ -42,19 +58,23 @@ The Rest has one shared hardware power command. Light on from off sends `SI01` t
 
 Available sounds: None, Stream, Pink noise, Dryer, Ocean, Wind, Rain, Birds, Crickets, Brahms' lullaby, Twinkle twinkle, and Rock-a-bye. Sound ID 3 is called White noise in the reference integration and Pink noise in the supplied Android app. The device plays its built-in tracks; it cannot stream media URLs.
 
-Changes to current light and sound made in the app or with the Rest's buttons are picked up on the next live poll, plus the time needed to connect and read feedback. The default interval is 10 seconds. To change it for one Rest, open its integration entry under **Settings → Devices & services**, choose **Configure → Polling interval**, and set an interval from 5 to 300 seconds. Saving the polling option reloads that entry. Shorter intervals use more Bluetooth connection capacity, especially with several devices sharing a proxy.
+Changes to current light and sound made in the app or with the Rest's buttons are picked up on the next live poll, plus the time needed to connect and read feedback. The default interval is 60 seconds. Every poll is a full Bluetooth connection, and on an ESP32 proxy each connection takes a connection slot and interrupts scanning while it is set up, so frequent polling of several devices degrades every other Bluetooth device on that proxy. To change the interval for one Rest, open its integration entry under **Settings → Devices & services**, choose **Configure → Updates and connection**, and set 15 to 300 seconds. Saving reloads that entry.
 
-HA commands do not wait for the poll timer, but can wait behind another operation on the same Rest. They read fresh state, apply related writes in one serialized transaction, and read device feedback. Successful commands publish that confirmed feedback before waiting for disconnection, so proxy cleanup does not delay the entity update. The service call still waits for cleanup to finish. Each connection resolves HA's current Bluetooth route. Failed reads or writes make entities unavailable and failed actions raise an error. Polling can recover availability.
+The integration also follows the Rest's advertisements through HA. When a Rest that could not be reached starts advertising again, it is read immediately instead of waiting for the next poll. When HA stops hearing it, its entities become unavailable without a connection attempt. With debug logging enabled, changes in its advertisement data are logged; those logs will show whether the Rest's advertisements carry its state, which would allow updates without polling.
+
+**Keep connected after a command** (same options page, 0–120 seconds, default 0) holds the connection open after an HA command instead of disconnecting. Follow-up commands, such as several brightness changes, then skip the connection setup, and button presses on the Rest are pushed to HA immediately through feedback notifications while the connection is open. Polls reuse a held connection but never extend it. The trade-off: while it is held, the Hatch app cannot connect, and the proxy's connection slot stays in use. A held connection that has gone stale reconnects once if nothing was written yet.
+
+HA commands do not wait for the poll timer, but can wait behind another operation on the same Rest. They read fresh state, apply related writes in one serialized transaction, and read device feedback. Successful commands publish that confirmed feedback before waiting for disconnection, so proxy cleanup does not delay the entity update. The service call still waits for cleanup to finish. Each new connection resolves HA's current Bluetooth route. A poll makes at most two connection attempts, a command three. Including any wait behind another operation on the same Rest, a poll or command fails within 60 seconds rather than hanging. Failed reads or writes make entities unavailable and failed actions raise an error. Polling or a returning advertisement can recover availability.
 
 If a read encounters an invalid GATT handle, missing characteristics, or malformed feedback, the integration clears the cache on the connected Bluetooth client, disconnects, and retries once with fresh services through HA's current route. Once a command write has begun, it reports failure without replaying the commands; a later poll can refresh state and restore availability.
 
-Sessions attempt to release their connection on completion, error, cancellation, unload, or HA shutdown. A failed disconnect is retained for another cleanup attempt if the client may still be connected; an already disconnected proxy client is released. Connection attempts and operations have bounded timeouts. The conservative 0.5-second pause after each write needs verification on hardware. Short sessions free proxy connection capacity and allow the phone app to use the device between polls. This integration uses polling without a persistent notification connection; the inspected Android app subscribes to feedback notifications while connected.
+Sessions release their connection on completion, error, cancellation, unload, or HA shutdown, unless a hold is active, in which case an idle timer releases it. A failed disconnect is retained for another cleanup attempt if the client may still be connected; an already disconnected proxy client is released. If the Rest drops the link mid-request, the request fails at once instead of waiting for its timeout. Connection attempts and operations have bounded timeouts. The conservative 0.5-second pause after each write needs verification on hardware. By default sessions are short, which frees proxy connection capacity and lets the phone app use the device between polls.
 
 ## Native programs
 
 Open **Settings → Devices & services → Hatch Rest BLE (1st Gen) → Configure → Manage programs** for the relevant Rest. Select a program to edit, enable/disable, or delete it, or choose **Add a new program**. Use **Refresh programs** on the device page for an immediate table read. One standard HA form contains its name, repeat days, start time, duration, enabled state, color, brightness, sound, volume, and firmware-supported toddler lock. This uses HA's options menus and forms; it does not install a custom program card or calendar. See [PROGRAMS.md](docs/PROGRAMS.md) for fields, refresh behavior, conflicts, and clock details.
 
-The program table is read in the background after setup, every 15 minutes, and when explicitly refreshed through the editor or button. It is separate from live light/sound polling. Programs remain on the Rest as the source of truth; they are not saved as HA schedules or replayed from HA storage. The device protocol strongly suggests firmware execution, but continued operation with HA and the proxy offline still requires a hardware check.
+The program table is read in the background after setup, hourly, and when explicitly refreshed through the editor or button. It is separate from live light/sound polling. A table read is about a hundred acknowledged requests, so it reads one slot at a time on a shared connection and lets queued polls and commands run between slots instead of after the whole table. Programs remain on the Rest as the source of truth; they are not saved as HA schedules or replayed from HA storage. The device protocol strongly suggests firmware execution, but continued operation with HA and the proxy offline still requires a hardware check.
 
 Before the first program write, record existing settings in the Hatch app and test with an unused slot. A failed transaction may have changed part of a slot; refresh and inspect both HA and the app before retrying. All program changes, including enable switches, compare a fresh complete record with the previously displayed record. Conflicts report an error and make the program table unavailable until a successful refresh. The integration requires device acknowledgements and saved-state readback, and never automatically replays a program mutation. Its clock read is informational; it does not set device time or apply DST changes. The [program guide](docs/PROGRAMS.md) explains when to use the app's Sync Time control.
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 — 2026-11-03
+
+**Action may be needed:** entries that never changed the polling interval now poll every 60 seconds instead of 10, so app and button changes take up to a minute to appear unless a connection is being held. Choose **Configure → Updates and connection** to set 15–300 seconds. Saved intervals below 15 seconds run at 15.
+
+- Reduce Bluetooth traffic. Each poll is a full connection; on ESP32 proxies that occupies a connection slot and interrupts scanning, which affected every other Bluetooth device on the proxy at the old 10-second default.
+- Follow the Rest's advertisements: read it immediately when an unreachable Rest advertises again, and mark entities unavailable when HA stops hearing it. Advertisement-data changes are logged at debug level.
+- Add **Keep connected after a command** (0–120 seconds, default 0). While held, follow-up commands reuse the connection and feedback notifications push button presses to HA immediately. Polls reuse a held connection but never extend it.
+- Program-table reads go one slot at a time on a shared connection, so polls and commands run between slots instead of waiting for the whole table. The background table refresh is now hourly.
+- Bound live operations: polls make at most two connection attempts, commands three, and a poll or command fails within 60 seconds including any wait for another operation. A link dropped mid-request fails that request immediately.
+- Read the firmware revision once and show it in the device registry. Add a disabled-by-default **Signal strength** diagnostic sensor with the receiving adapter/proxy as its `source` attribute.
+- Merge the duplicated live-control and program session code into one runner; the no-replay guarantee after a write is unchanged.
+- Packaging for the Home Assistant Marketplace: manifest categories and key order, HACS and hassfest workflows, and a test workflow that now actually runs the Home Assistant suite (it previously failed to import HA's Bluetooth component).
+
 ## 0.2.0 — 2026-10-15
 
 - Read and manage the original Rest's ten native program slots, including programs created in the Hatch app. The Rest remains the source of truth; HA does not store another schedule or execute program start/end actions.

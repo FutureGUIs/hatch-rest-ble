@@ -47,6 +47,18 @@ The integration's default poll interval is 10 seconds and can be set per device 
 
 In 0.1.2, successful command feedback is published immediately after that final read, before disconnect cleanup finishes. Only confirmed device values are published. The per-device operation lock remains held through cleanup, and the service call waits for cleanup before returning. Debug timing records lock waits, connection, feedback reads, and disconnection. These are integration scheduling choices; their effect on real Rest and proxy latency still needs hardware verification.
 
+## Connection policy in 0.3.0
+
+These are integration scheduling choices that supersede the 0.1.2 timing above; they need the same hardware verification.
+
+- Default poll interval 60 seconds, configurable 15–300. Each poll is a full connection, discovery (cached), feedback read, and disconnect.
+- HA's advertisement callbacks trigger an immediate refresh when a Rest that failed its last read advertises again, and mark entities unavailable when HA's Bluetooth manager reports the address unavailable. That report is ignored while this integration holds a connection, because a connected peripheral may stop advertising.
+- Optional post-command hold (0–120 seconds, default 0). After a successful command the connection stays open; the per-device lock is released, and the next operation reuses the connection. While held, the integration subscribes to feedback notifications on `02260002-…`, matching the app's connected behavior, and publishes each valid packet. Command readback still uses an explicit feedback read after the 0.5-second settle, not a notification. Polls and program operations reuse a held connection without extending it; an idle timer disconnects when the hold expires. If a reused connection fails before any write, the operation reconnects once without clearing caches.
+- Connection attempts per new connection: two for polls, three for commands and program operations, each with a 20-second connect timeout. Polls and commands are bounded at 60 seconds including lock wait; program operations keep a 165-second bound.
+- A `disconnected_callback` fails an in-flight program request when the link drops.
+- Program-table reads run each slot as its own locked step with a 5-second hold, then a separate `GT` step, so queued live operations run between slots on the same connection. Mutations remain a single locked session with a fresh baseline read.
+- Hardware and firmware revisions are read once per service discovery; the firmware revision is attached to device state and the device registry.
+
 ## Native power and output controls since 0.1.5
 
 The Rest exposes one shared power state. Media-player On/Off now controls that state directly; the separate Power switch is removed. Each action reads fresh device state before choosing its commands:
@@ -139,7 +151,7 @@ HA save/delete/enable operations first reread the complete affected slot and com
 
 ### HA state and device time
 
-Programs load after setup, every 15 minutes, and on editor/explicit refresh. This table uses the same BLE client and lock as live controls, whose default poll interval remains ten seconds. HA stores no separate program options or persistent schedule; occupied slot switches expose native enabled state using stable `<MAC>:program:<slot>` unique IDs. Their enabled state does not mean a program is currently running. Deletion removes only the corresponding slot entity.
+Programs load after setup, hourly (every 15 minutes before 0.3.0), and on editor/explicit refresh. This table uses the same BLE client and lock as live controls; since 0.3.0 live operations can run between slot reads. HA stores no separate program options or persistent schedule; occupied slot switches expose native enabled state using stable `<MAC>:program:<slot>` unique IDs. Their enabled state does not mean a program is currently running. Deletion removes only the corresponding slot entity.
 
 `GT` reads device clock text through `NightlightDevice.I1`/`J3` and local `DateUtils` parsing. The app has a separate `ST` clock-write path, with a firmware-gated `U`/`E`/`N` rule suffix; 0.2.0 does not issue `ST` or infer a full timezone from those rules. Clock data is informational. Program wall times are naive local values, and a start-plus-duration summary is not a fixed wall-clock end through DST.
 
