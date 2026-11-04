@@ -87,7 +87,7 @@ Each program device has:
 | Monday … Sunday | Switch | Repeat days. With none on, the program never repeats. |
 | Name | Text | 1–16 printable ASCII characters, as in the Hatch app. |
 | Start time | Time | On the Rest's own clock. |
-| Duration | Number (minutes) | 1 minute to 17 h 59 min. |
+| Duration | Number (minutes) | Whole minutes, 1 to 1079 (17 h 59 min), as in the Hatch app. Extra seconds stored on the Rest are kept unless you change the minutes. |
 | Color | Text | `#RRGGBB`, for example `#FF8000`. |
 | Brightness, Volume | Number (%) | Scaled like the Hatch app. |
 | Sound | Select | |

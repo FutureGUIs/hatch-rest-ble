@@ -21,6 +21,7 @@ from .programs import (
     MAX_DURATION,
     MIN_DURATION,
     ProgramSnapshot,
+    RestProgram,
     brightness_percent,
     brightness_raw,
     volume_percent,
@@ -61,14 +62,21 @@ class HatchRestProgramDuration(HatchRestProgramEntity, NumberEntity):
         super().__init__(coordinator, slot, "duration", "Duration")
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> int | None:
         program = self._program
-        # Native durations can carry a 30-second offset; show it, don't round.
-        return program.duration / 60 if program is not None else None
+        # Whole minutes, as in the Hatch app's hours/minutes picker. Stored
+        # durations can carry extra seconds (often 30); those are kept below.
+        return program.duration // 60 if program is not None else None
 
     async def async_set_native_value(self, value: float) -> None:
-        seconds = round(value * 60)
-        await self._async_edit(lambda program: replace(program, duration=seconds))
+        minutes = int(round(value))
+
+        def change(program: RestProgram) -> RestProgram:
+            if minutes == program.duration // 60:
+                return program  # Unchanged minutes keep the stored seconds.
+            return replace(program, duration=minutes * 60)
+
+        await self._async_edit(change)
 
 
 class HatchRestProgramBrightness(HatchRestProgramEntity, NumberEntity):

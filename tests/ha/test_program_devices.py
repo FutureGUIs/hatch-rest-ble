@@ -37,7 +37,7 @@ def program():
         slot=1,
         name="Bedtime",
         start=datetime(2026, 10, 15, 19, 30),
-        duration=41430,  # 690.5 minutes: the native 30-second offset is kept.
+        duration=41430,  # 690 min 30 s: shown as 690, the 30 s kept on save.
         days=0x3E,  # Monday-Friday
         color=(255, 100, 10),
         brightness=51,
@@ -112,7 +112,7 @@ async def test_each_program_is_a_device_with_its_settings(
     assert state(eid(hass, "text", 1, "name")).state == "Bedtime"
     assert state(eid(hass, "text", 1, "color")).state == "#FF640A"
     assert state(eid(hass, "time", 1, "start")).state == "19:30:00"
-    assert state(eid(hass, "number", 1, "duration")).state == "690.5"
+    assert state(eid(hass, "number", 1, "duration")).state == "690"
     assert state(eid(hass, "number", 1, "brightness")).state == "20"
     assert state(eid(hass, "number", 1, "volume")).state == "25"
     assert state(eid(hass, "select", 1, "sound")).state == "Rain"
@@ -164,7 +164,7 @@ async def test_unchanged_display_values_keep_native_values(
 ):
     await setup(hass, config_entry, mock_client, (program,))
     await call(
-        hass, "number", "set_value", eid(hass, "number", 1, "duration"), value=690.5
+        hass, "number", "set_value", eid(hass, "number", 1, "duration"), value=690
     )
     await call(
         hass, "number", "set_value", eid(hass, "number", 1, "brightness"), value=20
@@ -176,6 +176,10 @@ async def test_unchanged_display_values_keep_native_values(
     saved = mock_client.async_save_program.await_args.args[0]
     assert saved.duration == 3600
     assert saved.brightness == 51
+    # Other edits keep the stored seconds too.
+    mock_client.async_save_program.reset_mock()
+    await call(hass, "text", "set_value", eid(hass, "text", 1, "name"), value="Late")
+    assert mock_client.async_save_program.await_args.args[0].duration == 3600
 
 
 async def test_start_time_and_color(hass, config_entry, mock_client, program):
