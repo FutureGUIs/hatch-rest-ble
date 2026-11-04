@@ -41,12 +41,12 @@ from .coordinator import linger_seconds, poll_interval_seconds
 from .program_coordinator import ProgramConflictError
 from .programs import (
     FLAG_ENABLED,
-    FLAG_EXISTS,
     MAX_DURATION,
     MIN_DURATION,
     PROGRAM_SLOTS,
     TODDLER_LOCK_MASK,
     RestProgram,
+    new_program,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -329,18 +329,15 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
             clock = self._snapshot.device_time or dt_util.now().replace(tzinfo=None)
             state = self.config_entry.runtime_data.data
             self._expected = None
-            self._draft = RestProgram(
-                slot=slot,
-                name="New program",
-                start=datetime.combine(clock.date(), time(20)),
-                duration=3600,
-                days=0x7F,
+            self._draft = new_program(
+                slot,
+                today=clock,
                 color=state.color,
                 brightness=state.brightness,
                 sound=state.sound,
                 volume=state.volume,
-                flags=FLAG_EXISTS | FLAG_ENABLED,
-                buttons=0 if self._snapshot.supports_toddler_lock else None,
+                supports_lock=self._snapshot.supports_toddler_lock,
+                name="New program",
             )
             return await self.async_step_edit_program()
         self._expected = self._snapshot.get(int(user_input["choice"]))
