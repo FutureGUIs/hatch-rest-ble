@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-11-04
+
+- Each native program is now its own device under the Rest, `<Rest> program <slot>`, with entities for Enabled, repeat days (Monday–Sunday), Name, Start time, Duration, Color, Brightness, Volume, Sound and, on firmware 1.0.4.31+, Button lock. Program devices are HA child devices: they share the Rest's area, are disabled with it, and are removed with it.
+- Changes to one program within about a second are written as one verified save; entities show only device-confirmed values, and unchanged displayed values keep their exact native values.
+- New **Add program** button on the Rest creates a program in the first free slot. Deleting a program device deletes the program from the Rest first.
+- A program conflict from an entity reloads the program table instead of leaving it unavailable until a manual refresh.
+- The existing program enable switch keeps its entity ID and history, moves to its program device and is renamed **Enabled**.
+
 ## 0.3.0 — 2026-11-03
 
 **Action may be needed:** entries that never changed the polling interval now poll every 60 seconds instead of 10, so app and button changes take up to a minute to appear unless a connection is being held. Choose **Configure → Updates and connection** to set 15–300 seconds. Saved intervals below 15 seconds run at 15.

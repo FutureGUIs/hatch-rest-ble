@@ -30,11 +30,13 @@ Before the first write, record the existing program settings in the Hatch app an
 
 The full editor preserves existing protocol fields that it does not expose. It does not invent calendar exceptions, monthly recurrence, fades, or multistep routines. There is no calendar entity in this release.
 
-## Program switches and refresh
+## Program devices and refresh
 
-Each occupied slot gets a **Configuration** switch named for its program. On means the program is enabled for future scheduled starts. Off disables it. Before changing only the enabled flag, the integration compares the freshly read complete program against its cached record. A changed or replaced slot reports a conflict, including when its current enabled state already matches the requested state. These switches are separate from the Sound media player's whole-device power control.
+Since 0.4.0 each occupied slot is a child device of the Rest, named `<Rest> program <slot>`, with an entity for every field above (see the README's table). Its identifier and entity unique IDs are based on `<MAC>:program:<slot>`, so renaming a program keeps its identity and entity IDs. The **Enabled** switch keeps the unique ID `<MAC>:program:<slot>` used by earlier versions' program switch.
 
-The switch unique ID is based on `<MAC>:program:<slot>`, so renaming a program keeps its identity. Empty slots do not create switches. Deleting a program removes that slot's switch; Light/Sound and other slots remain. A new program in a reused slot uses the slot's identity.
+Entity changes to one slot are queued for about one second, then applied in order to the record current when the program lock is acquired and written as a single save with the editor's checks: a fresh complete read must match that record, every command must be acknowledged, and the saved record is read back. Entities show the confirmed readback, never the requested value. When only the enabled flag changes, the minimal enable/disable command is used. A displayed value that is not changed keeps its native value: brightness and volume percentages are converted back only when they change, and a duration with a 30-second offset is kept unless a different duration is entered.
+
+**Add program** writes a new record to the first free slot only after a fresh read confirms the slot is empty. Deleting a program device runs the same verified delete as the editor before HA removes the device. Empty slots have no device. When a complete table read no longer contains a slot, its device and entities are removed; a failed or partial read never removes them. A new program in a reused slot uses that slot's identity again.
 
 The device's **Refresh programs** button reads all slots from the Rest; **Refresh programs from the Rest** in the editor does the same. The program table also loads in the background after setup and refreshes hourly; entering or refreshing the editor obtains device data as well. Use explicit refresh to see a change made in the app immediately. A table read takes one slot at a time on a shared connection, so live controls can run between slots. Live light/sound polling remains independently configurable, with a 60-second default.
 
@@ -42,9 +44,9 @@ All sessions use the same per-device BLE lock. A program read or write can hold 
 
 ## Changes made in the app
 
-HA imports existing native programs rather than creating replacements at startup. Save, delete, and enable/disable all compare a fresh complete slot read against a baseline. The editor retains the record selected for editing or confirmation; switches use the cached program record. If the app or another operation changed or replaced it meanwhile, HA reports a conflict before a mutation or an apparent no-op. An enable/disable change still writes only the native enabled flag once the baseline matches.
+HA imports existing native programs rather than creating replacements at startup. Save, delete, and enable/disable all compare a fresh complete slot read against a baseline. The editor retains the record selected for editing or confirmation; program device entities use the cached program record. If the app or another operation changed or replaced it meanwhile, HA reports a conflict before a mutation or an apparent no-op. An enable/disable change still writes only the native enabled flag once the baseline matches.
 
-An editor conflict remains on the form; a switch conflict reports a HA action error. The program table becomes unavailable until a successful refresh. Use **Refresh programs** or the editor's Reload/refresh option, then review the latest program before trying again. Reload in the editor discards unsaved edits.
+An editor conflict remains on the form. A conflict from a program device entity, **Add program**, or device deletion reports an HA action error and reloads the program table in the background so the entities show what the Rest really has; make the change again after reviewing it. Use **Refresh programs** or the editor's Reload/refresh option, then review the latest program before trying again. Reload in the editor discards unsaved edits.
 
 Program edits do not apply the light/sound settings as immediate remote-control commands. Hatch documents that changes during a running program affect its next run, and a newly created program whose start time has passed waits for its next scheduled start. [Hatch: Setting Programs](https://help.hatch.co/hc/en-us/articles/115001825327-Setting-Programs).
 
