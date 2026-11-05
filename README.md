@@ -4,7 +4,7 @@
 
 A local Home Assistant custom integration for the original Bluetooth-only Hatch Rest. It uses Home Assistant's shared Bluetooth stack, including connectable local adapters and active Bluetooth proxies. No Hatch account or cloud connection is needed.
 
-Development baseline: **Home Assistant 2026.10**. Version **0.3.0** reduces Bluetooth traffic: a 60-second default poll, immediate refresh when an unreachable Rest starts advertising again, an optional connection hold after commands, and program-table reads that no longer block live controls. Version 0.2.0 added management of the Rest's ten native program slots (**Configure → Manage programs**).
+Development baseline: **Home Assistant 2026.10**. Version **0.4.0** shows each of the Rest's native programs as its own device, with a control for every setting. Version 0.3.0 reduced Bluetooth traffic: a 60-second default poll, immediate refresh when an unreachable Rest starts advertising again, an optional connection hold after commands, and program-table reads that no longer block live controls. Version 0.2.0 added management of the Rest's ten native program slots (**Configure → Manage programs**).
 
 **415 tests pass** (240 transport/protocol unit tests and 175 Home Assistant tests against HA 2026.10's real config-entry, coordinator, entity, and Bluetooth classes), with Ruff lint and formatting clean. Physical-device verification remains pending. See [VALIDATION.md](docs/VALIDATION.md) for test scope and remaining checks. Earlier HA releases have not been tested.
 
@@ -26,6 +26,10 @@ The Rest must be plugged in, but its light and sound can be off. Discovery, setu
 
 The domain is `hatch_rest_ble`. If you use another integration for the same device, disable that device's old entry before testing to avoid competing BLE connections. Moving from a different integration does not migrate its entities or automations. Source repository: [FutureGUIs/hatch-rest-ble](https://github.com/FutureGUIs/hatch-rest-ble).
 
+## Upgrade from 0.3.x
+
+Install 0.4.0 and restart. Each existing program becomes a **Rest program** device under the Rest after the first program read. The program's enable switch keeps its entity ID and history but moves to that device and is now named **Enabled** (its friendly name becomes "<Rest> program <slot> Enabled"). Automations that use its entity ID keep working.
+
 ## Upgrade from 0.2.x
 
 Install 0.3.0 through the Marketplace/HACS or replace the `custom_components/hatch_rest_ble` directory, then restart. Entries and entity IDs are retained. Behavior changes:
@@ -46,7 +50,8 @@ The approved Hatch logo is bundled in `brand/icon.png` (256×256) and `brand/ico
 | --- | --- |
 | Light | RGB, brightness, and the built-in Color loop/Rainbow effect. Light on from whole-device off sends `SI01` followed by the requested color and brightness. Light off sets brightness to zero while retaining sound. |
 | Sound media player | On/Off controls whole-device power, including light and sound. Play resumes sound; Pause or source None silences sound while retaining the lamp. Select built-in sounds and set volume. |
-| Program switches | One Configuration switch per occupied program slot. On arms that program for its scheduled time; Off disables future scheduled starts. These switches do not indicate whether a program is currently running and do not replace whole-device power. |
+| Program devices | One device per stored program; see [Native programs](#native-programs). |
+| Add program button | Creates a program in the first free slot (8 PM, 1 hour, every day, with the Rest's current light and sound), which appears as a new program device. |
 | Refresh programs button | Reads the Rest's program table again, including changes made in the Hatch app. |
 | Signal strength (diagnostic, disabled by default) | RSSI of the Rest's latest advertisement, with the receiving adapter or proxy in its `source` attribute. It keeps updating while polls fail, which helps diagnose range and proxy routing. |
 
@@ -72,11 +77,33 @@ Sessions release their connection on completion, error, cancellation, unload, or
 
 ## Native programs
 
-Open **Settings → Devices & services → Hatch Rest BLE (1st Gen) → Configure → Manage programs** for the relevant Rest. Select a program to edit, enable/disable, or delete it, or choose **Add a new program**. Use **Refresh programs** on the device page for an immediate table read. One standard HA form contains its name, repeat days, start time, duration, enabled state, color, brightness, sound, volume, and firmware-supported toddler lock. This uses HA's options menus and forms; it does not install a custom program card or calendar. See [PROGRAMS.md](docs/PROGRAMS.md) for fields, refresh behavior, conflicts, and clock details.
+The Rest stores up to **10** programs. Each one appears in HA as its own device, **<Rest> program <slot>** (for example *Nursery Rest program 3*), listed under the Rest. The number is the program's slot on the Rest, so it shows how many of the 10 are in use. Program devices share the Rest's area unless you give them their own, and are disabled and removed with the Rest.
+
+Each program device has:
+
+| Entity | Type | Notes |
+| --- | --- | --- |
+| Enabled | Switch | Arms the program for future starts. It does not show whether it is running now. |
+| Monday … Sunday | Switch | Repeat days. With none on, the program never repeats. |
+| Name | Text | 1–16 printable ASCII characters, as in the Hatch app. |
+| Start time | Time | On the Rest's own clock. |
+| Duration | Number (minutes) | Whole minutes, 1 to 1079 (17 h 59 min), as in the Hatch app. Extra seconds stored on the Rest are kept unless you change the minutes. |
+| Color | Text | `#RRGGBB`, for example `#FF8000`. |
+| Brightness, Volume | Number (%) | Scaled like the Hatch app. |
+| Sound | Select | |
+| Button lock | Switch | Only on firmware 1.0.4.31 or newer. |
+
+Changes are written to the Rest and only shown once the Rest confirms them. Changes to one program made within about a second, such as switching several days on or off, are written together as one save. A displayed value you don't change keeps its exact device value, so editing the name doesn't round the volume or drop a 30-second duration offset.
+
+- **Add** a program with the Rest's **Add program** button. It uses the first free slot; when all 10 are in use, delete one first.
+- **Delete** a program by deleting its device from the program device's page. The program is deleted from the Rest first; if that fails, the device stays and HA shows why.
+- Programs added or deleted in the Hatch app appear or disappear after the next program read (hourly, or **Refresh programs**). A failed read never removes anything.
+
+**Configure → Manage programs** remains available as a single form for editing a whole program at once. See [PROGRAMS.md](docs/PROGRAMS.md) for fields, refresh behavior, conflicts, and clock details.
 
 The program table is read in the background after setup, hourly, and when explicitly refreshed through the editor or button. It is separate from live light/sound polling. A table read is about a hundred acknowledged requests, so it reads one slot at a time on a shared connection and lets queued polls and commands run between slots instead of after the whole table. Programs remain on the Rest as the source of truth; they are not saved as HA schedules or replayed from HA storage. The device protocol strongly suggests firmware execution, but continued operation with HA and the proxy offline still requires a hardware check.
 
-Before the first program write, record existing settings in the Hatch app and test with an unused slot. A failed transaction may have changed part of a slot; refresh and inspect both HA and the app before retrying. All program changes, including enable switches, compare a fresh complete record with the previously displayed record. Conflicts report an error and make the program table unavailable until a successful refresh. The integration requires device acknowledgements and saved-state readback, and never automatically replays a program mutation. Its clock read is informational; it does not set device time or apply DST changes. The [program guide](docs/PROGRAMS.md) explains when to use the app's Sync Time control.
+Before the first program write, record existing settings in the Hatch app and test with an unused slot. A failed transaction may have changed part of a slot; refresh and inspect both HA and the app before retrying. All program changes compare a fresh complete record with the previously displayed record. A conflict from a program device entity reloads the program table and asks you to make the change again; an editor conflict stays on the form. The integration requires device acknowledgements and saved-state readback, and never automatically replays a program mutation. Its clock read is informational; it does not set device time or apply DST changes. The [program guide](docs/PROGRAMS.md) explains when to use the app's Sync Time control.
 
 ## Example actions
 
@@ -101,7 +128,9 @@ data:
 
 ## Troubleshooting and device verification
 
-If setup cannot connect, check HA's Bluetooth configuration, enable active connections on your proxy, move it closer, close the phone app, and retry. Passive-only receivers can detect advertisements but cannot control the Rest. A busy device may stop advertising while the phone is connected. Use HA's integration debug logging to capture connection failures; the integration never scans separately or opens raw address-only Bleak connections.
+If setup reports that the Rest **is not advertising to any Bluetooth adapter or proxy that can connect**, the most common cause is the Hatch app: the Rest accepts one connection at a time and stops advertising while the app holds it, and HA drops it a few minutes later. Fully close the app (on iPhone, swipe it away) or turn off the phone's Bluetooth. Otherwise check that the Rest is powered and in range. If the message says it **is only heard by Bluetooth scanners that cannot make connections**, it is reaching HA only through passive receivers; put an adapter or proxy that can connect within range (for an ESPHome proxy, `active: true`). Each message ends with HA's own Bluetooth detail: which scanners see the Rest, whether any can connect, and connection-slot use.
+
+You don't need to reload after fixing the cause: when HA hears the Rest again, it retries setup immediately instead of waiting for its next retry (which can be up to 10 minutes away). **Settings → Devices & services → Bluetooth → Advertisement monitor** shows whether HA hears the Rest, through which adapter or proxy, and whether that path is connectable. Use HA's integration debug logging to capture connection failures; the integration never scans separately or opens raw address-only Bleak connections.
 
 For delayed commands or updates, enable debug logging on the integration entry and reproduce one change. Timing messages distinguish waiting for another operation on the same Rest, connecting, reading feedback, and disconnecting. A command cannot update HA until its feedback has been read, and the unchanged 0.5-second delay after each write also contributes to command time. Keep the phone app closed during this check so its connection does not compete with HA.
 

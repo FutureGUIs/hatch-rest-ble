@@ -18,7 +18,12 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Keep refresh available even when the last program read failed."""
-    async_add_entities([HatchRestRefreshPrograms(entry.runtime_data)])
+    async_add_entities(
+        [
+            HatchRestRefreshPrograms(entry.runtime_data),
+            HatchRestAddProgram(entry.runtime_data),
+        ]
+    )
 
 
 class HatchRestRefreshPrograms(HatchRestEntity, ButtonEntity):
@@ -33,3 +38,17 @@ class HatchRestRefreshPrograms(HatchRestEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.coordinator.program_coordinator.async_refresh_programs()
+
+
+class HatchRestAddProgram(HatchRestEntity, ButtonEntity):
+    """Create a program in the first free slot; it appears as a new device."""
+
+    _attr_name = "Add program"
+    _attr_icon = "mdi:calendar-plus"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: HatchRestCoordinator) -> None:
+        super().__init__(coordinator, "add_program")
+
+    async def async_press(self) -> None:
+        await self.coordinator.program_coordinator.async_add_program()

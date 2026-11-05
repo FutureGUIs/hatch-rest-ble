@@ -6,6 +6,7 @@ from datetime import datetime
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.hatch_rest_ble.const import DOMAIN
@@ -19,6 +20,14 @@ from custom_components.hatch_rest_ble.protocol import HatchRestError
 from .conftest import ADDRESS
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture(autouse=True)
+def fast_edits(monkeypatch):
+    monkeypatch.setattr(
+        "custom_components.hatch_rest_ble.program_coordinator.EDIT_DEBOUNCE_SECONDS",
+        0.01,
+    )
 
 
 @pytest.fixture
@@ -73,10 +82,12 @@ async def test_program_switches_share_device_and_report_timing(
         "Saturday",
     ]
     light_id = registry.async_get_entity_id("light", DOMAIN, f"{ADDRESS}:light")
-    assert (
-        registry.async_get(switch_id).device_id
-        == registry.async_get(light_id).device_id
-    )
+    devices = dr.async_get(hass)
+    program_device = devices.async_get(registry.async_get(switch_id).device_id)
+    hub_device_id = registry.async_get(light_id).device_id
+    assert program_device.id != hub_device_id
+    assert program_device.parent_device_id == hub_device_id
+    assert program_device.name == "Nursery Rest program 1"
     mock_client.async_control.assert_not_awaited()
 
 
@@ -104,7 +115,11 @@ async def test_stale_program_switch_reports_conflict_without_publishing_requeste
     mock_client.async_set_program_enabled.side_effect = ProgramConflictError(
         "changed in app"
     )
-    with pytest.raises(HomeAssistantError, match="refresh programs"):
+    replacement = replace(program, name="App edit")
+    mock_client.async_get_programs.return_value = ProgramSnapshot(
+        programs=(replacement,)
+    )
+    with pytest.raises(HomeAssistantError, match="changed on the Rest"):
         await hass.services.async_call(
             "switch",
             "turn_off",
@@ -114,9 +129,12 @@ async def test_stale_program_switch_reports_conflict_without_publishing_requeste
     mock_client.async_set_program_enabled.assert_awaited_once_with(
         1, False, expected=program
     )
-    assert coordinator.data.get(1) == program
-    assert not coordinator.last_update_success
     assert config_entry.runtime_data.last_update_success
+    # The device's version is reloaded instead of publishing the request.
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert coordinator.last_update_success
+    assert coordinator.data.get(1) == replacement
+    assert hass.states.get(entity_id(hass, "program:1")).state == "on"
 
 
 async def test_refresh_adds_program_and_confirmed_deletion_removes_only_its_switch(

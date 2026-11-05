@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import re
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import datetime, time
 
 from .protocol import HatchRestError, ProtocolError
 
@@ -261,3 +262,97 @@ def delete_commands(slot: int) -> list[bytes]:
     """Clear one native slot with the app's flags-and-finish sequence."""
     _slot(slot)
     return [f"ESB{slot:02X}".encode(), b"ESL00", b"ESF"]
+
+
+# Bit for each weekday in the native repeat mask, Monday first.
+WEEKDAY_BITS = (
+    ("monday", "Monday", 0x02),
+    ("tuesday", "Tuesday", 0x04),
+    ("wednesday", "Wednesday", 0x08),
+    ("thursday", "Thursday", 0x10),
+    ("friday", "Friday", 0x20),
+    ("saturday", "Saturday", 0x40),
+    ("sunday", "Sunday", 0x01),
+)
+DEFAULT_START = time(20)
+DEFAULT_DURATION = 3600
+
+
+def new_program(
+    slot: int,
+    *,
+    today: datetime,
+    color: tuple[int, int, int],
+    brightness: int,
+    sound: int,
+    volume: int,
+    supports_lock: bool,
+    name: str | None = None,
+) -> RestProgram:
+    """The defaults used whenever HA adds a program: 8 PM, 1 hour, every day."""
+    return RestProgram(
+        slot=slot,
+        name=name if name is not None else f"Program {slot}",
+        start=datetime.combine(today.date(), DEFAULT_START),
+        duration=DEFAULT_DURATION,
+        days=0x7F,
+        color=color,
+        brightness=brightness,
+        sound=sound,
+        volume=volume,
+        flags=FLAG_EXISTS | FLAG_ENABLED,
+        buttons=0 if supports_lock else None,
+    )
+
+
+def brightness_percent(raw: int) -> int:
+    """Native 0-255 program brightness as the app's whole percentage."""
+    return math.floor(raw * 100 / 255 + 0.5)
+
+
+def brightness_raw(percent: int, current: int) -> int:
+    """Keep the exact native value when the displayed percentage is unchanged."""
+    if percent == brightness_percent(current):
+        return current
+    return math.floor(percent * 255 / 100 + 0.5)
+
+
+def volume_percent(raw: int, minimum: int) -> int:
+    """Native volume scaled above the hardware revision's minimum."""
+    return max(0, math.floor((raw - minimum) * 100 / (255 - minimum) + 0.5))
+
+
+def volume_raw(percent: int, current: int, minimum: int) -> int:
+    """Keep the exact native value when the displayed percentage is unchanged."""
+    if percent == volume_percent(current, minimum):
+        return current
+    return math.floor(percent * (255 - minimum) / 100 + 0.5) + minimum
+
+
+def with_toddler_lock(program: RestProgram, locked: bool) -> RestProgram:
+    """Set or clear all eight named button restrictions, keeping other bits."""
+    buttons = program.buttons or 0
+    buttons = buttons | TODDLER_LOCK_MASK if locked else buttons & ~TODDLER_LOCK_MASK
+    return replace(program, buttons=buttons)
+
+
+def with_enabled(program: RestProgram, enabled: bool) -> RestProgram:
+    """Set the native enable flag, keeping every other flag bit."""
+    flags = program.flags | FLAG_ENABLED if enabled else program.flags & ~FLAG_ENABLED
+    return replace(program, flags=flags)
+
+
+def program_device_key(address: str, slot: int) -> str:
+    """Device-registry identifier for one program slot of one Rest."""
+    return f"{address}:program:{slot}"
+
+
+def program_slot_from_key(address: str, key: str) -> int | None:
+    """Slot of a program device identifier or entity unique ID, if it is one."""
+    prefix = f"{address}:program:"
+    if not key.startswith(prefix):
+        return None
+    head = key[len(prefix) :].split(":", 1)[0]
+    if not head.isdigit() or not 1 <= int(head) <= PROGRAM_SLOTS:
+        return None
+    return int(head)

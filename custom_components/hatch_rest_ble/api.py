@@ -272,8 +272,41 @@ class HatchRestClient:
                 self.hass, self.address, connectable=True
             )
         ) is None:
-            raise HatchRestError("No connectable Bluetooth route to this Rest")
+            raise HatchRestError(self._unreachable_reason())
         return device
+
+    def _unreachable_reason(self) -> str:
+        """Explain a missing route in user terms, then HA's technical detail."""
+        from homeassistant.components.bluetooth import (
+            BluetoothReachabilityIntent,
+            async_address_reachability_diagnostics,
+            async_scanner_devices_by_address,
+        )
+
+        heard_by = async_scanner_devices_by_address(
+            self.hass, self.address, connectable=False
+        )
+        if heard_by and not any(device.scanner.connectable for device in heard_by):
+            reason = (
+                "The Rest is only heard by Bluetooth scanners that cannot make "
+                "connections. Put a Bluetooth adapter or proxy that can connect "
+                "within range (for an ESPHome proxy, set active: true)."
+            )
+        else:
+            reason = (
+                "The Rest is not advertising to any Bluetooth adapter or proxy "
+                "that can connect. If the Hatch app is open, close it: the Rest "
+                "accepts one connection at a time and stops advertising while "
+                "connected. Otherwise check that it is powered and in range."
+            )
+        try:
+            detail = async_address_reachability_diagnostics(
+                self.hass, self.address, BluetoothReachabilityIntent.CONNECTION
+            )
+        except Exception:  # noqa: BLE001 - diagnostics must never mask the error
+            _LOGGER.debug("Bluetooth reachability diagnostics failed", exc_info=True)
+            return reason
+        return f"{reason} Bluetooth: {detail}"
 
     def _remember_client(self, client: BleakClientWithServiceCache) -> None:
         self._client = client

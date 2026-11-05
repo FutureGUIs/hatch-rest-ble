@@ -1,32 +1,26 @@
-"""Enable switches for the Rest's stored weekly programs."""
+"""Program switches: enabled, repeat days, and button lock."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH, DeviceInfo
-from homeassistant.helpers.entity import EntityCategory
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SOUNDS
+from .const import SOUNDS
 from .program_coordinator import HatchRestProgramCoordinator
-from .programs import ProgramConflictError, RestProgram
-
-_DAY_NAMES = (
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
+from .program_entity import HatchRestProgramEntity, async_setup_program_entities
+from .programs import (
+    WEEKDAY_BITS,
+    ProgramSnapshot,
+    RestProgram,
+    with_enabled,
+    with_toddler_lock,
 )
 
 
@@ -35,81 +29,31 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Add discovered slots and remove only confirmed-deleted program entities."""
-    coordinator = entry.runtime_data.program_coordinator
-    added_slots: set[int] = set()
-    registry = er.async_get(hass)
-    prefix = f"{coordinator.address}:program:"
-    registered_slots = {
-        int(entity.unique_id[len(prefix) :])
-        for entity in er.async_entries_for_config_entry(registry, entry.entry_id)
-        if entity.platform == DOMAIN
-        and entity.domain == "switch"
-        and entity.unique_id.startswith(prefix)
-        and entity.unique_id[len(prefix) :].isdigit()
-        and 1 <= int(entity.unique_id[len(prefix) :]) <= 10
-    }
+    """Add switches for each program device."""
 
-    @callback
-    def update_program_entities() -> None:
-        snapshot = coordinator.data
-        if not coordinator.last_update_success or snapshot is None:
-            return  # An unread table is never evidence that programs were deleted.
-        slots = {program.slot for program in snapshot.programs if program.exists}
-        for slot in (added_slots | registered_slots) - slots:
-            entity_id = registry.async_get_entity_id(
-                "switch", DOMAIN, f"{coordinator.address}:program:{slot}"
-            )
-            if (
-                entity_id is not None
-                and (entity := registry.async_get(entity_id)) is not None
-                and entity.config_entry_id == entry.entry_id
-            ):
-                registry.async_remove(entity_id)
-        additions = slots - added_slots
-        added_slots.intersection_update(slots)
-        registered_slots.intersection_update(slots)
-        added_slots.update(additions)
-        if additions:
-            async_add_entities(
-                HatchRestProgramSwitch(coordinator, slot) for slot in sorted(additions)
-            )
+    def build(
+        coordinator: HatchRestProgramCoordinator, slot: int, snapshot: ProgramSnapshot
+    ) -> list[Entity]:
+        entities: list[Entity] = [HatchRestProgramSwitch(coordinator, slot)]
+        entities.extend(
+            HatchRestProgramDay(coordinator, slot, key, label, bit)
+            for key, label, bit in WEEKDAY_BITS
+        )
+        if snapshot.supports_toddler_lock:
+            entities.append(HatchRestProgramLock(coordinator, slot))
+        return entities
 
-    entry.async_on_unload(coordinator.async_add_listener(update_program_entities))
-    update_program_entities()
+    async_setup_program_entities(entry, async_add_entities, build)
 
 
-class HatchRestProgramSwitch(
-    CoordinatorEntity[HatchRestProgramCoordinator], SwitchEntity
-):
+class HatchRestProgramSwitch(HatchRestProgramEntity, SwitchEntity):
     """Arm a stored program; this does not start or stop its current run."""
 
-    _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.CONFIG
     _attr_icon = "mdi:calendar-clock"
 
     def __init__(self, coordinator: HatchRestProgramCoordinator, slot: int) -> None:
-        super().__init__(coordinator)
-        self.slot = slot
-        self._attr_unique_id = f"{coordinator.address}:program:{slot}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.address)},
-            connections={(CONNECTION_BLUETOOTH, coordinator.address)},
-        )
-
-    @property
-    def _program(self) -> RestProgram | None:
-        snapshot = self.coordinator.data
-        return snapshot.get(self.slot) if snapshot is not None else None
-
-    @property
-    def name(self) -> str:
-        program = self._program
-        return f"{program.name} program" if program else f"Program {self.slot}"
-
-    @property
-    def available(self) -> bool:
-        return super().available and self._program is not None
+        # Unique ID unchanged from 0.2/0.3 so entity IDs and history carry over.
+        super().__init__(coordinator, slot, None, "Enabled")
 
     @property
     def is_on(self) -> bool | None:
@@ -122,14 +66,16 @@ class HatchRestProgramSwitch(
         end = program.start + timedelta(seconds=program.duration)
         return {
             "slot": self.slot,
+            "program_name": program.name,
             "start_time": program.start.strftime("%H:%M:%S"),
             "duration_seconds": program.duration,
             "calculated_end_time": end.strftime("%H:%M:%S"),
             "ends_next_day": end.date() != program.start.date(),
+            # Sunday first, as in 0.2/0.3 (the native mask's bit order).
             "repeat_days": [
-                name
-                for index, name in enumerate(_DAY_NAMES)
-                if program.days & (1 << index)
+                label
+                for _key, label, bit in sorted(WEEKDAY_BITS, key=lambda day: day[2])
+                if program.days & bit
             ],
             "rgb_color": program.color,
             "brightness": program.brightness,
@@ -138,15 +84,59 @@ class HatchRestProgramSwitch(
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._async_set_enabled(True)
+        await self._async_edit(lambda program: with_enabled(program, True))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._async_set_enabled(False)
+        await self._async_edit(lambda program: with_enabled(program, False))
 
-    async def _async_set_enabled(self, enabled: bool) -> None:
-        try:
-            await self.coordinator.async_set_program_enabled(self.slot, enabled)
-        except ProgramConflictError as err:
-            raise HomeAssistantError(
-                "The program changed in the Hatch app; refresh programs before retrying"
-            ) from err
+
+class HatchRestProgramDay(HatchRestProgramEntity, SwitchEntity):
+    """Whether the program repeats on one weekday."""
+
+    _attr_icon = "mdi:calendar-week"
+
+    def __init__(
+        self,
+        coordinator: HatchRestProgramCoordinator,
+        slot: int,
+        key: str,
+        label: str,
+        bit: int,
+    ) -> None:
+        super().__init__(coordinator, slot, key, label)
+        self._bit = bit
+
+    @property
+    def is_on(self) -> bool | None:
+        program = self._program
+        return bool(program.days & self._bit) if program is not None else None
+
+    def _set(self, program: RestProgram, on: bool) -> RestProgram:
+        days = program.days | self._bit if on else program.days & ~self._bit
+        return replace(program, days=days)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_edit(lambda program: self._set(program, True))
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_edit(lambda program: self._set(program, False))
+
+
+class HatchRestProgramLock(HatchRestProgramEntity, SwitchEntity):
+    """Lock the Rest's buttons while this program runs (firmware 1.0.4.31+)."""
+
+    _attr_icon = "mdi:lock"
+
+    def __init__(self, coordinator: HatchRestProgramCoordinator, slot: int) -> None:
+        super().__init__(coordinator, slot, "button_lock", "Button lock")
+
+    @property
+    def is_on(self) -> bool | None:
+        program = self._program
+        return program.toddler_lock if program is not None else None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._async_edit(lambda program: with_toddler_lock(program, True))
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._async_edit(lambda program: with_toddler_lock(program, False))
