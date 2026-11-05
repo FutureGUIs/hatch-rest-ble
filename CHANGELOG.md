@@ -7,6 +7,7 @@
 - New **Add program** button on the Rest creates a program in the first free slot. Deleting a program device deletes the program from the Rest first.
 - A program conflict from an entity reloads the program table instead of leaving it unavailable until a manual refresh.
 - The existing program enable switch keeps its entity ID and history, moves to its program device and is renamed **Enabled**.
+- "No connectable Bluetooth route to this Rest" is replaced by a message that names the likely cause — the Hatch app holding the Rest's only connection, power or range, or only passive scanners hearing it — followed by HA's Bluetooth reachability detail. A test now covers HA retrying setup as soon as the Rest advertises again.
 
 ## 0.3.0 — 2026-11-03
 
