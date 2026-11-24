@@ -94,6 +94,17 @@ class _SessionProgress:
     """Track whether repeating an operation could replay a device command."""
 
     write_started: bool = False
+    # What the attempt was doing, for errors such as an empty TimeoutError.
+    phase: str = "starting"
+
+
+def _describe_failure(err: BaseException) -> str:
+    """Name an exception even when it has no message (e.g. a timeout)."""
+    if text := str(err).strip():
+        return text
+    if isinstance(err, TimeoutError):
+        return "timed out"
+    return type(err).__name__
 
 
 class _SessionClient(BleakClientWithServiceCache):
@@ -426,7 +437,9 @@ class HatchRestClient:
             assert client is not None
             _LOGGER.debug("%s: Reusing held Bluetooth connection", self.address)
         else:
+            progress.phase = "connecting"
             client = await self._connect(kind)
+        progress.phase = "checking the Rest's Bluetooth services"
         self._held = False
         self._cancel_idle_timer()
 
@@ -454,6 +467,7 @@ class HatchRestClient:
                 {"write", "write-without-response"} & set(tx.properties)
             ):
                 raise UnsupportedDeviceError("Incompatible Rest GATT properties")
+        progress.phase = "reading device information"
         await self._read_device_info(client)
         return _Session(client, tx, feedback, rx, progress, reused)
 
@@ -573,6 +587,7 @@ class HatchRestClient:
         operation_timeout = (
             PROGRAM_OPERATION_TIMEOUT if kind == "program" else OPERATION_TIMEOUT
         )
+        attempts: list[_SessionProgress] = []
         try:
             # Bound both the wait for another operation and connector retries.
             async with asyncio.timeout(operation_timeout):
@@ -584,12 +599,23 @@ class HatchRestClient:
                         monotonic() - started,
                     )
                     return await self._run_locked(
-                        kind, operation, on_success, hold_seconds
+                        kind, operation, on_success, hold_seconds, attempts
                     )
         except (BleakError, OSError, TimeoutError) as err:
-            if kind == "program":
-                raise HatchRestError(f"Native program operation failed: {err}") from err
-            raise HatchRestError(f"Bluetooth operation failed: {err}") from err
+            phase = (
+                attempts[-1].phase
+                if attempts
+                else "waiting for another operation on this Rest"
+            )
+            prefix = (
+                "Native program operation failed"
+                if kind == "program"
+                else "Bluetooth operation failed"
+            )
+            raise HatchRestError(
+                f"{prefix} while {phase} after {monotonic() - started:.0f} s: "
+                f"{_describe_failure(err)}"
+            ) from err
 
     async def _run_locked(
         self,
@@ -597,6 +623,7 @@ class HatchRestClient:
         operation: Callable[[_Session], Awaitable[_Result]],
         on_success: Callable[[_Result], None] | None,
         hold_seconds: float,
+        attempts: list[_SessionProgress],
     ) -> _Result:
         session_timeout = (
             PROGRAM_SESSION_TIMEOUT if kind == "program" else SESSION_TIMEOUT
@@ -612,6 +639,7 @@ class HatchRestClient:
                         "check the adapter or proxy"
                     )
             progress = _SessionProgress()
+            attempts.append(progress)
             keep = False
             reused = self._reusable()
             try:
@@ -671,7 +699,11 @@ class HatchRestClient:
                     self._held = True
                     self._schedule_idle_release()
                 else:
+                    # Report the failing step, unless releasing itself fails.
+                    failed_phase = progress.phase
+                    progress.phase = "disconnecting"
                     await self._release_session()
+                    progress.phase = failed_phase
             await asyncio.sleep(RECOVERY_BACKOFF_SECONDS)
         raise HatchRestError("Unable to read Rest after service discovery recovery")
 
@@ -701,6 +733,7 @@ class HatchRestClient:
         async def operation(session: _Session) -> RestState:
             client, tx, feedback = session.client, session.tx, session.feedback
             started = monotonic()
+            session.progress.phase = "reading the Rest's state"
             async with asyncio.timeout(GATT_TIMEOUT):
                 state = parse_feedback(await client.read_gatt_char(feedback))
             state = self._with_hardware(state)
@@ -712,6 +745,7 @@ class HatchRestClient:
             commands = build_commands(state) if build_commands is not None else []
             for command in commands:
                 session.progress.write_started = True
+                session.progress.phase = "sending a command"
                 async with asyncio.timeout(GATT_TIMEOUT):
                     await client.write_gatt_char(
                         tx, command, response="write" in tx.properties
@@ -719,6 +753,7 @@ class HatchRestClient:
                 # Legacy firmware needs time to apply consecutive commands.
                 await asyncio.sleep(COMMAND_SETTLE_SECONDS)
             if commands:
+                session.progress.phase = "reading the Rest's state after a command"
                 async with asyncio.timeout(GATT_TIMEOUT):
                     state = parse_feedback(await client.read_gatt_char(feedback))
                 _LOGGER.debug(
@@ -758,6 +793,7 @@ class HatchRestClient:
             channel = _ProgramChannel(client, session.tx)
             self._program_channel = channel
             try:
+                session.progress.phase = "exchanging program data"
                 async with asyncio.timeout(GATT_TIMEOUT):
                     await client.start_notify(rx, channel.notification)
                 return await operation(
