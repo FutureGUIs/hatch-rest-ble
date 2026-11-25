@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
+from .coordinator import program_refresh_enabled
 from .programs import (
     PROGRAM_SLOTS,
     ProgramConflictError,
@@ -68,7 +69,13 @@ class HatchRestProgramCoordinator(DataUpdateCoordinator[ProgramSnapshot]):
             _LOGGER,
             name=f"{device.device_name} programs",
             config_entry=entry,
-            update_interval=PROGRAM_REFRESH_INTERVAL,
+            # Off means the table is read at startup, on Refresh programs, and
+            # around edits only: about 100 acknowledged requests fewer per hour.
+            update_interval=(
+                PROGRAM_REFRESH_INTERVAL
+                if program_refresh_enabled(entry.options)
+                else None
+            ),
             always_update=False,
         )
         self.entry = entry

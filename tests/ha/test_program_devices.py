@@ -10,7 +10,10 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.setup import async_setup_component
 
-from custom_components.hatch_rest_ble.const import DOMAIN
+from custom_components.hatch_rest_ble.const import CONF_PROGRAM_REFRESH, DOMAIN
+from custom_components.hatch_rest_ble.program_coordinator import (
+    PROGRAM_REFRESH_INTERVAL,
+)
 from custom_components.hatch_rest_ble.programs import (
     ProgramConflictError,
     ProgramSnapshot,
@@ -333,3 +336,23 @@ async def test_program_devices_follow_the_rest_area_and_disabled_state(
     assert dr.async_get_effective_area_id(hass, child) == "nursery"
     devices.async_update_device(hub.id, disabled_by=dr.DeviceEntryDisabler.USER)
     assert program_device(hass, 1).disabled
+
+
+@pytest.mark.parametrize(
+    ("options", "interval"),
+    [
+        ({}, PROGRAM_REFRESH_INTERVAL),
+        ({CONF_PROGRAM_REFRESH: True}, PROGRAM_REFRESH_INTERVAL),
+        ({CONF_PROGRAM_REFRESH: False}, None),
+    ],
+)
+async def test_hourly_program_reads_follow_the_option(
+    hass, config_entry, mock_client, program, options, interval
+):
+    config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(config_entry, options=options)
+    coordinator = await setup(hass, config_entry, mock_client, (program,))
+    assert coordinator.update_interval == interval
+    # Programs are still read once at startup so their devices appear.
+    mock_client.async_get_programs.assert_awaited_once()
+    assert program_device(hass, 1) is not None
