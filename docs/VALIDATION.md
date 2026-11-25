@@ -1,5 +1,16 @@
 # Validation status and device test plan
 
+## Version 0.4.0 status
+
+**429 tests passed** on 2026-11-04 (240 unit, 189 Home Assistant) with Home Assistant 2026.10.0, with no deprecation warnings from the integration. New HA coverage: program child devices and their entities, button-lock gating by firmware, batching of quick edits into one save, preservation of native values for unchanged display values, the minimal enable path, validation before writes, failed writes, Add program (including a full table), deleting a program device through HA's device-removal websocket command (success, conflict, and refusing the Rest itself), removal only after complete reads, and area/disabled inheritance.
+
+Physical checks added for 0.4.0:
+
+1. Toggle several repeat days on a program device within a second and confirm one save, then confirm the app shows the same program.
+2. Change the name only and confirm volume, brightness and a duration with seconds are unchanged in the app.
+3. Use **Add program**, then delete the new program device; confirm the slot is empty in the app.
+4. Delete a program in the app, press **Refresh programs**, and confirm its device disappears.
+
 ## Version 0.3.0 status
 
 **415 tests passed** on 2026-11-03 with Python 3.14, Home Assistant 2026.10.0, Bleak 3.0.2, and bleak-retry-connector 4.7.1: 240 unit tests for protocol, transport, and program transactions, and 175 Home Assistant tests. This is the first release where the HA suite actually ran: before 0.3.0 it could not import HA's Bluetooth component because its requirements were not installed, so CI had been failing at that step. One HA test was also corrected; it set up a second Rest that legitimately removed its own legacy switch.

@@ -730,3 +730,68 @@ async def test_firmware_failure_is_optional_and_retried(session):
     client.read_gatt_char.side_effect = [BleakError("busy"), PACKET, b"1.1", PACKET]
     assert (await rest.async_update()).firmware_version is None
     assert (await rest.async_update()).firmware_version == "1.1"
+
+
+# --- Failure messages name the step and the cause (0.4.0) ----------------
+
+
+async def test_connect_timeout_says_connecting_and_timed_out(session):
+    rest, _, connect, _ = session
+    connect.side_effect = TimeoutError()
+    with pytest.raises(HatchRestError) as err:
+        await rest.async_update()
+    message = str(err.value)
+    assert message.startswith("Bluetooth operation failed while connecting after ")
+    assert message.endswith(" s: timed out")
+
+
+async def test_read_timeout_names_the_read(session, monkeypatch):
+    rest, client, _, _ = session
+    monkeypatch.setattr(api, "GATT_TIMEOUT", 0.01)
+
+    async def hang(*args):
+        await asyncio.sleep(1)
+
+    client.read_gatt_char.side_effect = hang
+    with pytest.raises(
+        HatchRestError, match="while reading the Rest's state after .* s: timed out"
+    ):
+        await rest.async_update()
+    client.disconnect.assert_awaited_once()
+
+
+async def test_write_timeout_names_the_command(session, monkeypatch):
+    rest, client, _, _ = session
+    monkeypatch.setattr(api, "GATT_TIMEOUT", 0.01)
+
+    async def hang(*args, **kwargs):
+        await asyncio.sleep(1)
+
+    client.write_gatt_char.side_effect = hang
+    with pytest.raises(HatchRestError, match="while sending a command after"):
+        await rest.async_control(lambda state: [b"SV10"])
+
+
+async def test_lock_wait_timeout_says_waiting(session, monkeypatch):
+    rest, _, _, _ = session
+    monkeypatch.setattr(api, "OPERATION_TIMEOUT", 0.01)
+    async with rest._lock:
+        with pytest.raises(
+            HatchRestError, match="while waiting for another operation on this Rest"
+        ):
+            await rest.async_update()
+
+
+async def test_bleak_message_is_kept(session):
+    rest, _, connect, _ = session
+    connect.side_effect = BleakError("No slots available")
+    with pytest.raises(
+        HatchRestError, match="while connecting after .* s: No slots available$"
+    ):
+        await rest.async_update()
+
+
+def test_describe_failure_names_empty_errors():
+    assert api._describe_failure(TimeoutError()) == "timed out"
+    assert api._describe_failure(OSError()) == "OSError"
+    assert api._describe_failure(BleakError("busy")) == "busy"

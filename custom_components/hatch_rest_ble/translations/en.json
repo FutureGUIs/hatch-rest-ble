@@ -39,10 +39,11 @@
       },
       "polling": {
         "title": "Hatch Rest updates",
-        "description": "Choose how often to check for changes made with the Hatch app or Rest buttons. Each check briefly connects to the Rest, so shorter intervals use more Bluetooth capacity, especially with several devices on one proxy. When the Rest comes back into range after being unreachable, it is checked right away.\n\nAfter a command, the connection can stay open briefly so follow-up commands are faster and button presses on the Rest appear immediately. While it is open, the Hatch app cannot connect. Use 0 to disconnect right after each command.",
+        "description": "Choose how often to check for changes made with the Hatch app or Rest buttons. Each check briefly connects to the Rest, so shorter intervals use more Bluetooth capacity, especially with several devices on one proxy. When the Rest comes back into range after being unreachable, it is checked right away.\n\nAfter a command, the connection can stay open briefly so follow-up commands are faster and button presses on the Rest appear immediately. While it is open, the Hatch app cannot connect. Use 0 to disconnect right after each command.\n\nPrograms are read hourly to pick up changes made in the Hatch app. Turn this off to read them only when HA starts, when you press Refresh programs, and when you edit a program. Each read is about a hundred requests to the Rest.",
         "data": {
           "poll_interval": "Polling interval",
-          "linger_seconds": "Keep connected after a command"
+          "linger_seconds": "Keep connected after a command",
+          "program_refresh": "Read programs every hour"
         }
       },
       "programs": {

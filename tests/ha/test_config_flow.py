@@ -11,6 +11,7 @@ from custom_components.hatch_rest_ble.config_flow import CONF_MANUAL_ADDRESS
 from custom_components.hatch_rest_ble.const import (
     CONF_LINGER_SECONDS,
     CONF_POLL_INTERVAL,
+    CONF_PROGRAM_REFRESH,
     DOMAIN,
     MANUFACTURER_ID,
     MANUFACTURER_IDS,
@@ -390,6 +391,7 @@ async def test_options_show_current_or_default_poll_interval(
     assert result["data_schema"]({}) == {
         CONF_POLL_INTERVAL: expected,
         CONF_LINGER_SECONDS: 0,
+        CONF_PROGRAM_REFRESH: True,
     }
     mock_client.async_update.assert_not_awaited()
     mock_client.async_control.assert_not_awaited()
@@ -518,3 +520,41 @@ async def test_options_reject_fractional_linger(hass, config_entry, mock_client)
     assert result["type"] == FlowResultType.FORM
     assert result["errors"] == {CONF_LINGER_SECONDS: "invalid_linger"}
     assert config_entry.options == {}
+
+
+async def test_options_turn_off_hourly_program_reads(hass, config_entry, mock_client):
+    config_entry.add_to_hass(hass)
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        result = await _open_polling(hass, config_entry.entry_id)
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                CONF_POLL_INTERVAL: 300,
+                CONF_LINGER_SECONDS: 0,
+                CONF_PROGRAM_REFRESH: False,
+            },
+        )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert config_entry.options == {
+        CONF_POLL_INTERVAL: 300,
+        CONF_PROGRAM_REFRESH: False,
+    }
+    reopened = await _open_polling(hass, config_entry.entry_id)
+    assert reopened["data_schema"]({})[CONF_PROGRAM_REFRESH] is False
+
+
+async def test_options_leave_program_refresh_unset_when_unchanged(
+    hass, config_entry, mock_client
+):
+    config_entry.add_to_hass(hass)
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        result = await _open_polling(hass, config_entry.entry_id)
+        await hass.config_entries.options.async_configure(
+            result["flow_id"],
+            {
+                CONF_POLL_INTERVAL: 60,
+                CONF_LINGER_SECONDS: 0,
+                CONF_PROGRAM_REFRESH: True,
+            },
+        )
+    assert CONF_PROGRAM_REFRESH not in config_entry.options

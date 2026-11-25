@@ -29,6 +29,7 @@ from .api import HatchRestClient, HatchRestError, UnsupportedDeviceError
 from .const import (
     CONF_LINGER_SECONDS,
     CONF_POLL_INTERVAL,
+    CONF_PROGRAM_REFRESH,
     DOMAIN,
     LINGER_SECONDS,
     MANUFACTURER_IDS,
@@ -37,16 +38,20 @@ from .const import (
     MIN_POLL_INTERVAL_SECONDS,
     SOUNDS,
 )
-from .coordinator import linger_seconds, poll_interval_seconds
+from .coordinator import (
+    linger_seconds,
+    poll_interval_seconds,
+    program_refresh_enabled,
+)
 from .program_coordinator import ProgramConflictError
 from .programs import (
     FLAG_ENABLED,
-    FLAG_EXISTS,
     MAX_DURATION,
     MIN_DURATION,
     PROGRAM_SLOTS,
     TODDLER_LOCK_MASK,
     RestProgram,
+    new_program,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -329,18 +334,15 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
             clock = self._snapshot.device_time or dt_util.now().replace(tzinfo=None)
             state = self.config_entry.runtime_data.data
             self._expected = None
-            self._draft = RestProgram(
-                slot=slot,
-                name="New program",
-                start=datetime.combine(clock.date(), time(20)),
-                duration=3600,
-                days=0x7F,
+            self._draft = new_program(
+                slot,
+                today=clock,
                 color=state.color,
                 brightness=state.brightness,
                 sound=state.sound,
                 volume=state.volume,
-                flags=FLAG_EXISTS | FLAG_ENABLED,
-                buttons=0 if self._snapshot.supports_toddler_lock else None,
+                supports_lock=self._snapshot.supports_toddler_lock,
+                name="New program",
             )
             return await self.async_step_edit_program()
         self._expected = self._snapshot.get(int(user_input["choice"]))
@@ -677,6 +679,7 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             interval = user_input.get(CONF_POLL_INTERVAL)
             linger = user_input.get(CONF_LINGER_SECONDS, LINGER_SECONDS)
+            refresh = user_input.get(CONF_PROGRAM_REFRESH, True)
             if not _whole_number_between(
                 interval, MIN_POLL_INTERVAL_SECONDS, MAX_POLL_INTERVAL_SECONDS
             ):
@@ -689,6 +692,8 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
                 # interval leaves older entries identical and skips a reload.
                 if int(linger) != LINGER_SECONDS or CONF_LINGER_SECONDS in data:
                     data[CONF_LINGER_SECONDS] = int(linger)
+                if refresh is not True or CONF_PROGRAM_REFRESH in data:
+                    data[CONF_PROGRAM_REFRESH] = refresh is True
                 return self.async_create_entry(title="", data=data)
 
         options = self.config_entry.options
@@ -718,6 +723,10 @@ class HatchRestOptionsFlow(OptionsFlowWithReload):
                             unit_of_measurement="s",
                         )
                     ),
+                    vol.Required(
+                        CONF_PROGRAM_REFRESH,
+                        default=program_refresh_enabled(options),
+                    ): selector.BooleanSelector(),
                 }
             ),
             errors=errors,

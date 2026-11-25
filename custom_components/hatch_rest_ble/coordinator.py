@@ -16,6 +16,7 @@ from .api import CommandBuilder, HatchRestClient
 from .const import (
     CONF_LINGER_SECONDS,
     CONF_POLL_INTERVAL,
+    CONF_PROGRAM_REFRESH,
     DOMAIN,
     LINGER_SECONDS,
     MAX_LINGER_SECONDS,
@@ -38,6 +39,11 @@ def poll_interval_seconds(options: dict) -> int:
     """Saved interval, clamped to the current bounds (older releases allowed 5s)."""
     value = options.get(CONF_POLL_INTERVAL, POLL_INTERVAL_SECONDS)
     return int(min(max(value, MIN_POLL_INTERVAL_SECONDS), MAX_POLL_INTERVAL_SECONDS))
+
+
+def program_refresh_enabled(options: dict) -> bool:
+    """Whether the program table is re-read hourly (default) or only on demand."""
+    return options.get(CONF_PROGRAM_REFRESH, True) is not False
 
 
 def linger_seconds(options: dict) -> int:
